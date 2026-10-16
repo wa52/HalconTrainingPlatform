@@ -204,7 +204,8 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
         if (_session is null || SelectedRow is null) return;
         var image = SelectedRow.Image;
         var boxes = Boxes.Select(box => box.ToBox()).ToList();
-        DetectionActiveLearningStore.ValidateReviewedBoxes(image, boxes, _session.Classes);
+        // A rework flag or partial draft must be savable even while coordinates are incomplete.
+        if (newStatus == "approved") DetectionActiveLearningStore.ValidateReviewedBoxes(image, boxes, _session.Classes);
         image.ReviewedBoxes = boxes;
         image.HasDraft = true;
         image.Status = newStatus;
