@@ -33,6 +33,7 @@ public sealed class DetectionReviewImage
     public string? GroupId { get; set; }
     public List<DetectionBox> PredictedBoxes { get; set; } = [];
     public List<DetectionBox> ReviewedBoxes { get; set; } = [];
+    public bool HasDraft { get; set; }
     public string Status { get; set; } = "pending";
     public double Priority { get; set; }
     public string Reason { get; set; } = "";
