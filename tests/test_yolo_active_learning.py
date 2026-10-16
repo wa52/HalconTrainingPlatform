@@ -63,6 +63,69 @@ class YoloSeedTest(unittest.TestCase):
         config = json.loads((self.root / "yolo" / "data.yaml").read_text(encoding="utf-8"))
         self.assertEqual(config["nc"], 2)
 
+    def test_existing_model_prediction_writes_review_schema(self):
+        from types import SimpleNamespace
+
+        model_file = self.root / "model.pt"
+        model_file.write_bytes(b"fake-weights")
+        (self.root / "manifest.json").write_text(json.dumps({
+            "classIds": [1, 8], "classNames": ["scratch", "dent"]
+        }), encoding="utf-8")
+        images_json = self.root / "image-list.json"
+        images_json.write_text(json.dumps([
+            str(self.images / "01.png"), str(self.images / "03.png")
+        ]), encoding="utf-8")
+
+        class FakeTensor:
+            def __init__(self, values):
+                self.values = values
+
+            def cpu(self):
+                return self
+
+            def tolist(self):
+                return self.values
+
+        class FakeBoxes:
+            def __init__(self, one):
+                self.xyxy = FakeTensor([[10, 15, 30, 25]] if one else [])
+                self.cls = FakeTensor([1.0] if one else [])
+                self.conf = FakeTensor([0.27] if one else [])
+
+        class FakeModel:
+            def __init__(self, path):
+                self.names = {0: "scratch", 1: "dent"}
+
+            def predict(self, source, **kwargs):
+                return [SimpleNamespace(
+                    boxes=FakeBoxes(source.endswith("01.png")),
+                    orig_shape=(80, 100),
+                )]
+
+        class FakeTorch:
+            class cuda:
+                @staticmethod
+                def is_available():
+                    return False
+
+        original = module.require_ultralytics
+        module.require_ultralytics = lambda: (FakeModel, FakeTorch)
+        try:
+            output = self.root / "predictions.json"
+            module.predict(SimpleNamespace(
+                model=str(model_file), images_json=str(images_json),
+                output_json=str(output), imgsz=640
+            ))
+            proposal = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(proposal["schemaVersion"], 1)
+            self.assertEqual([category["id"] for category in proposal["classes"]], [1, 8])
+            self.assertEqual(proposal["images"][0]["boxes"][0]["classId"], 8)
+            self.assertEqual(proposal["images"][0]["boxes"][0]["confidence"], .27)
+            self.assertEqual(proposal["images"][1]["boxes"], [])
+            self.assertEqual(json.loads(output.with_suffix(".errors.json").read_text()), [])
+        finally:
+            module.require_ultralytics = original
+
     def test_reject_four_images(self):
         self.data["images"].pop()
         self.write()
