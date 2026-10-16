@@ -13,7 +13,7 @@
    </StackPanel>
    <StackPanel>
     <TextBlock Text="目标检测 · 主动学习" Style="{StaticResource PageTitle}" FontSize="22"/>
-    <TextBlock Text="少量人工标注 → 初始训练 → 批量预测 → 审核循环" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,4,0,0"/>
+    <TextBlock Text="人工确认满5张即可微调预训练模型 → 批量预测 → 人工审核" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,4,0,0"/>
    </StackPanel>
   </DockPanel>
   <Border Grid.Row="1" Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="5" Padding="12" Margin="0,0,0,12">
@@ -28,12 +28,16 @@
   <Border Grid.Row="2" Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="5" Padding="10" Margin="0,0,0,12">
     <DockPanel>
       <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-        <Button Content="训练初始模型" Command="{Binding BootstrapCommand}" IsEnabled="{Binding CanBootstrap}" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0"/>
-        <Button Content="用初始模型批量预测" Command="{Binding PredictTrainedCommand}" IsEnabled="{Binding CanPredictTrained}" Margin="0,0,8,0"/>
+        <Button Content="开始微调训练" Command="{Binding BootstrapCommand}" IsEnabled="{Binding CanBootstrap}" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0"/>
+        <Button Content="使用本轮模型预测" Command="{Binding PredictTrainedCommand}" IsEnabled="{Binding CanPredictTrained}" Margin="0,0,8,0"/>
         <Button Content="停止" Command="{Binding StopOperationCommand}" IsEnabled="{Binding CanStopOperation}"/>
       </StackPanel>
       <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-        <TextBlock Text="初始训练" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,12,0"/>
+        <TextBlock Text="微调训练" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,10,0"/>
+        <ComboBox SelectedValuePath="Content" SelectedValue="{Binding TrainingEngine,Mode=TwoWay}" Width="137" Margin="0,0,12,0" VerticalAlignment="Center">
+          <ComboBoxItem Content="YOLO · 预训练"/>
+          <ComboBoxItem Content="HALCON · 检测"/>
+        </ComboBox>
         <TextBlock Text="Epoch" VerticalAlignment="Center"/>
         <TextBox Text="{Binding BootstrapEpochs,UpdateSourceTrigger=LostFocus,ValidatesOnExceptions=True}" Width="47" Margin="5,0,12,0"/>
         <TextBlock Text="Batch" VerticalAlignment="Center"/>
