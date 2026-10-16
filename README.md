@@ -16,9 +16,9 @@
 
 ## 目标检测主动学习（审核/数据准备）
 
-数据集页新增「目标检测 · 主动学习」：导入模型预测 JSON，按检测框置信度、类别得分差及工件/批次分组筛选高价值审核样本；原生图像视口显示检测框，支持修改框坐标和类别、添加/删除框、保存草稿、确认和退回重标。仅人工确认的标签可导出为 COCO（包含原图副本和来源记录），会话可恢复。详见 [docs/ACTIVE_LEARNING_DETECTION.md](docs/ACTIVE_LEARNING_DETECTION.md)。
+数据集页新增「目标检测 · 主动学习」：**无模型时**选择几张原图并在图上拖框、修正类别、人工确认后，以核心训练参数进行小样本初始目标检测训练；训练得到未验收检测模型，可直接对新图片批量预标注。**已有检测模型时**选择带有匹配 `preprocess.hdict` 的 `.hdl` 并多选图片，直接批量预测，无需手写 JSON。审核队列按置信度、类别得分差及工件/批次排序，支持修改/添加/删除框、恢复审核会话，只将人工确认标签导出为 COCO。详见 [docs/ACTIVE_LEARNING_DETECTION.md](docs/ACTIVE_LEARNING_DETECTION.md)。
 
-**边界**：当前目标检测主动学习依赖外部预测 JSON，尚未提供 HALCON 目标检测模型自动批量推理、训练和 mAP 验收；该功能不代表目标检测训练适配器已完成。可用 `dotnet run --project tests/HalconTraining.ActiveLearning.Smoke` 运行无 HALCON 的数据层验证。
+**边界**：已有目标检测初始训练及批量预测 Worker 代码，**仅提供探索性 bootstrap**，未通过 Windows HALCON+GPU 实机验收、独立 mAP 与正式模型质量验收。不能把它视为完整的生产级目标检测训练适配器；原本的分类/语义分割独立验收与模型发布流程仍保持不变。可用 `dotnet run --project tests/HalconTraining.ActiveLearning.Smoke` 运行无 HALCON 的数据层验证。
 
 ## 架构
 
