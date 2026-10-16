@@ -93,7 +93,33 @@ try
     using var seedCoco = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(seedExport, "annotations.json")));
     Require(seedCoco.RootElement.GetProperty("images").GetArrayLength() == 1,
         "Seed COCO export contains only hand-labelled approved images");
-    Console.WriteLine("PASS: detection seed/rank/review/reload/COCO/validation");
+    var imageD = Path.Combine(root, "d.png");
+    var imageE = Path.Combine(root, "e.png");
+    await File.WriteAllBytesAsync(imageD, [137, 80, 78, 71]);
+    await File.WriteAllBytesAsync(imageE, [137, 80, 78, 71]);
+    var countAdded = await store.AppendSeedImagesAsync(seed,
+        [(imageA, 100, 80), (imageD, 100, 80), (imageE, 100, 80)]);
+    Require(countAdded == 2 && seed.Images.Count == 5, "Append deduplicates images");
+    Require(seed.Images[0].Status == "approved" && seed.Images[0].ReviewedBoxes.Count == 1,
+        "Adding more images must not erase verified labels");
+    Require(!DetectionActiveLearningStore.ReadyForBootstrap(seed), "One approved image cannot train");
+    for (var i = 1; i < 4; i++)
+    {
+        seed.Images[i].Status = "approved";
+        seed.Images[i].HasDraft = true;
+        seed.Images[i].ReviewedBoxes = i == 1 ? [new DetectionBox(2, 0, 10, 15, 40, 50)] : [];
+    }
+    Require(!DetectionActiveLearningStore.ReadyForBootstrap(seed), "Four approved images must not train");
+    seed.Images[4].Status = "approved";
+    seed.Images[4].HasDraft = true;
+    Require(DetectionActiveLearningStore.ReadyForBootstrap(seed),
+        "Exactly five approved images with a box per class may train");
+    await store.SaveAsync(seed);
+    var fiveImageCoco = await store.ExportApprovedCocoAsync(seed);
+    using var five = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(fiveImageCoco, "annotations.json")));
+    Require(five.RootElement.GetProperty("images").GetArrayLength() == 5,
+        "COCO export uses all five approved images, including human-verified negatives");
+    Console.WriteLine("PASS: detection seed/rank/review/reload/COCO/5-image eligibility");
 }
 finally
 {
