@@ -1,0 +1,15 @@
+<Application x:Class="HalconTraining.App.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:HalconTraining.App.ViewModels"
+             xmlns:views="clr-namespace:HalconTraining.App.Views" xmlns:services="clr-namespace:HalconTraining.App.Services"
+             >
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Themes/Tokens.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+            <services:ModelLabelConverter x:Key="ModelLabel"/>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

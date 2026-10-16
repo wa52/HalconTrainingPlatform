@@ -1,0 +1,34 @@
+**/bin/
+**/obj/
+.vs/
+.idea/
+.vscode/
+artifacts/
+results/
+logs/
+/datasets/
+experiments/
+packages/
+*.user
+*.suo
+license*
+
+assets/pretrained/*.hdl
+
+models/
+docs/UI_MODEL_TEST_PREVIEW.png
+
+# Local evidence and historical generated previews
+docs/UI_*.jpg
+docs/UI_*.html
+docs/NH320_TRAINING_RESULT.md
+
+# HALCON data / model packages and local secrets
+*.hdl
+*.hdict
+*.onnx
+*.pfx
+*.key
+.env
+.env.*
+!.env.example

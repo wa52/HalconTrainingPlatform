@@ -1,0 +1,12 @@
+<UserControl x:Class="HalconTraining.App.Views.WorkspaceBoardView" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="28">
+        <TextBlock Text="{Binding Title}" FontSize="24" FontWeight="SemiBold" />
+        <TextBlock Text="{Binding Description}" FontSize="13" Foreground="{StaticResource MutedBrush}" Margin="0,6,0,22" />
+        <Border Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="6" Padding="20" Margin="0,0,0,16">
+            <StackPanel><TextBlock Text="工作区" FontSize="16" FontWeight="SemiBold"/><TextBlock Text="本页按独立模块设计。当前展示功能边界和接入状态；对应数据持久化与 HALCON 任务适配器完成前，操作不会伪装成可用。" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0"/></StackPanel>
+        </Border>
+        <ItemsControl ItemsSource="{Binding Actions}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel><ItemsControl.ItemTemplate>
+            <DataTemplate><Border Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="6" Padding="18" Margin="0,0,12,12"><StackPanel><DockPanel><TextBlock Text="{Binding Title}" FontSize="15" FontWeight="SemiBold"/><TextBlock Text="{Binding Status}" DockPanel.Dock="Right" Foreground="{StaticResource MutedBrush}"/></DockPanel><TextBlock Text="{Binding Description}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,10,0,0"/></StackPanel></Border></DataTemplate>
+        </ItemsControl.ItemTemplate></ItemsControl>
+    </StackPanel></ScrollViewer>
+</UserControl>

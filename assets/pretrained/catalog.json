@@ -1,0 +1,84 @@
+{
+  "models": [
+    {
+      "sizeBytes": 3023429,
+      "sha256": "EE6ACB927788B92265AA58CD339A93739DD06F09E6C13001949BC8A71659AB05",
+      "file": "pretrained_dl_classifier_compact.hdl"
+    },
+    {
+      "sizeBytes": 41622450,
+      "sha256": "886553A7B4F6F4DA82F4B93EA6E1BFB4FE836C5310EB28C337D79F31777A6820",
+      "file": "pretrained_dl_classifier_enhanced.hdl"
+    },
+    {
+      "sizeBytes": 3100954,
+      "sha256": "CF5D4F45ED97310E70FB277C4CC783C6C1D0A4556688ABBD1E251665B5D92FBD",
+      "file": "pretrained_dl_segmentation_compact.hdl"
+    },
+    {
+      "sizeBytes": 96372433,
+      "sha256": "7658C8EECBDB2087B1D9D8902B295145C49901721F279F98C1397271AA0ED299",
+      "file": "initial_dl_anomaly_medium.hdl"
+    },
+    {
+      "sizeBytes": 25240815,
+      "sha256": "14E1F49A87B86ADD56EB43446FEFA6B02720E9C56638911A25637CF76B72203F",
+      "file": "pretrained_dl_anomaly_global_context.hdl"
+    },
+    {
+      "sizeBytes": 9644722,
+      "sha256": "97E4C281A79BA4248AC48196C5FF406C7B73D7EB84BFC9BBE88E26C03522B124",
+      "file": "pretrained_deep_ocr_detection_compact.hdl"
+    },
+    {
+      "sizeBytes": 178063848,
+      "sha256": "C443DB06A7947BD94A64DE601B61E502F24203946904CBC389043CB886B0EEA0",
+      "file": "pretrained_deep_ocr_recognition.hdl"
+    }
+  ],
+  "validationStatus": "not_loaded",
+  "taskDefaults": {
+    "multilabel_classification": {
+      "mode": "configure_multilabel",
+      "file": "pretrained_dl_classifier_compact.hdl"
+    },
+    "anomaly_detection": {
+      "mode": "read_model",
+      "file": "initial_dl_anomaly_medium.hdl"
+    },
+    "detection": {
+      "mode": "create_detection",
+      "file": "pretrained_dl_classifier_compact.hdl"
+    },
+    "instance_segmentation": {
+      "mode": "create_instance_segmentation",
+      "file": "pretrained_dl_classifier_enhanced.hdl"
+    },
+    "ocr_detection": {
+      "mode": "read_ocr_component",
+      "file": "pretrained_deep_ocr_detection_compact.hdl"
+    },
+    "classification": {
+      "mode": "read_model",
+      "file": "pretrained_dl_classifier_compact.hdl"
+    },
+    "semantic_segmentation": {
+      "mode": "read_model",
+      "file": "pretrained_dl_segmentation_compact.hdl"
+    },
+    "rotated_detection": {
+      "mode": "create_detection_rectangle2",
+      "file": "pretrained_dl_classifier_compact.hdl"
+    },
+    "gc_anomaly_detection": {
+      "mode": "read_model",
+      "file": "pretrained_dl_anomaly_global_context.hdl"
+    },
+    "ocr_recognition": {
+      "mode": "read_ocr_component",
+      "file": "pretrained_deep_ocr_recognition.hdl"
+    }
+  },
+  "halconVersion": "24.11",
+  "schemaVersion": 1
+}
