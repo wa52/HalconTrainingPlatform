@@ -225,7 +225,10 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
 
     private async Task BootstrapAsync()
     {
-        if (!CanBootstrap) throw new InvalidOperationException("请先人工确认至少3张图片，并覆盖全部类别。");
+        if (_session is null || _session.Images.Count(image => image.Status == "approved") < 3 ||
+            !_session.Classes.All(category => _session.Images.Where(image => image.Status == "approved")
+                .SelectMany(image => image.ReviewedBoxes).Any(box => box.ClassId == category.Id)))
+            throw new InvalidOperationException("请先人工确认至少3张图片，并覆盖全部类别。");
         if (_trainingBusy()) throw new InvalidOperationException("请先结束主训练任务。");
         if (BootstrapEpochs < 1 || BootstrapBatch < 1 || BootstrapSize < 64 ||
             BootstrapSize % 32 != 0 || !double.IsFinite(BootstrapRate) || BootstrapRate <= 0)
