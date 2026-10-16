@@ -63,6 +63,8 @@
         </ScrollViewer>
       </TabItem>
       <TabItem Header="数据集">
+        <TabControl>
+          <TabItem Header="浏览数据集">
         <Grid Margin="24">
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -106,6 +108,12 @@
             </Grid>
           </Grid>
         </Grid>
+      
+          </TabItem>
+          <TabItem Header="目标检测 · 主动学习">
+            <views:DetectionActiveLearningView DataContext="{Binding ActiveLearning}" />
+          </TabItem>
+        </TabControl>
       </TabItem>
       <TabItem Header="训练">
         <Grid Margin="24">
