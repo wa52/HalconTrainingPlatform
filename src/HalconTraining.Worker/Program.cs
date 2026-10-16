@@ -7,6 +7,41 @@ using HalconTraining.Persistence.Environment;
 using HalconTraining.Halcon.Datasets;
 using HalconTraining.Halcon.Training;
 
+var detectionSeed = GetOption(args, "--detection-bootstrap");
+if (detectionSeed is not null)
+{
+    try
+    {
+        var outcome = DetectionBootstrapTrainer.Train(detectionSeed,
+            GetOption(args, "--backbone-file") ?? throw new ArgumentException("缺少--backbone-file"),
+            GetOption(args, "--output-dir") ?? throw new ArgumentException("缺少--output-dir"),
+            int.Parse(GetOption(args, "--epochs") ?? "5"),
+            int.Parse(GetOption(args, "--batch") ?? "1"),
+            int.Parse(GetOption(args, "--width") ?? "512"),
+            int.Parse(GetOption(args, "--height") ?? "512"),
+            double.Parse(GetOption(args, "--rate") ?? "0.0001", System.Globalization.CultureInfo.InvariantCulture),
+            item => { Console.WriteLine(JsonSerializer.Serialize(item)); Console.Out.Flush(); });
+        Console.WriteLine(JsonSerializer.Serialize(outcome));
+        return 0;
+    }
+    catch (Exception error) { Console.Error.WriteLine(error); return 1; }
+}
+
+var detectionModel = GetOption(args, "--detection-predict");
+if (detectionModel is not null)
+{
+    try
+    {
+        var outcome = DetectionPredictor.Predict(detectionModel,
+            GetOption(args, "--image-list") ?? throw new ArgumentException("缺少--image-list"),
+            GetOption(args, "--output-json") ?? throw new ArgumentException("缺少--output-json"),
+            item => { Console.WriteLine(JsonSerializer.Serialize(item)); Console.Out.Flush(); });
+        Console.WriteLine(JsonSerializer.Serialize(outcome));
+        return 0;
+    }
+    catch (Exception error) { Console.Error.WriteLine(error); return 1; }
+}
+
 var overlayImage=GetOption(args,"--render-overlay");
 if(overlayImage is not null)
 {
