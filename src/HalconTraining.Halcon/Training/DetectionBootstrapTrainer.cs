@@ -11,7 +11,7 @@ namespace HalconTraining.Halcon.Training;
 public static class DetectionBootstrapTrainer
 {
     private sealed record Box(int ClassId, double Col1, double Row1, double Col2, double Row2);
-    private sealed record Sample(string Path, Box[] Boxes);
+    private sealed record Sample(string Path, int Width, int Height, Box[] Boxes);
 
     public static object Train(string cocoFile, string backboneFile, string outputDirectory,
         int epochs, int batchSize, int width, int height, double learningRate, Action<object> progress)
@@ -55,7 +55,7 @@ public static class DetectionBootstrapTrainer
             if (boxes.Any(box => box.Col1 < 0 || box.Row1 < 0 || box.Col2 > imageWidth ||
                 box.Row2 > imageHeight || box.Col1 >= box.Col2 || box.Row1 >= box.Row2))
                 throw new InvalidDataException("COCO 检测框越界。");
-            return new Sample(Path.Combine(imagesDirectory, filename), boxes);
+            return new Sample(Path.Combine(imagesDirectory, filename), imageWidth, imageHeight, boxes);
         }).ToArray();
 
         if (samples.Length < 3 || samples.Length < batchSize)
@@ -129,6 +129,9 @@ public static class DetectionBootstrapTrainer
                         {
                             var item = samples[indices[(offset + j) % indices.Length]];
                             using var image = new HImage(item.Path);
+                            image.GetImageSize(out int actualWidth, out int actualHeight);
+                            if (actualWidth != item.Width || actualHeight != item.Height)
+                                throw new InvalidDataException("实际图像尺寸与COCO标注不一致：" + item.Path);
                             HOperatorSet.CreateDict(out var sample);
                             using (sample)
                             {
