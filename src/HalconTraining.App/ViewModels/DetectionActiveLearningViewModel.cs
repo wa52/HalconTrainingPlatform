@@ -124,6 +124,7 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
             OnPropertyChanged(nameof(CanRemoveBox));
             OnPropertyChanged(nameof(CanExport));
             OnPropertyChanged(nameof(CanBootstrap));
+        OnPropertyChanged(nameof(TrainingEligibility));
             OnPropertyChanged(nameof(CanPredictTrained));
             OnPropertyChanged(nameof(CanAddImages));
             OnPropertyChanged(nameof(CanStopOperation));
@@ -133,9 +134,19 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
     public bool CanReview => !IsBusy && SelectedRow is not null;
     public bool CanAddImages => !IsBusy && _session is not null;
     public bool CanBootstrap => !IsBusy && _session is not null &&
-        _session.Images.Count(image => image.Status == "approved") >= 5 &&
-        _session.Classes.All(category => _session.Images.Where(image => image.Status == "approved")
-            .SelectMany(image => image.ReviewedBoxes).Any(box => box.ClassId == category.Id));
+        DetectionActiveLearningStore.ReadyForBootstrap(_session);
+    public string TrainingEligibility
+    {
+        get
+        {
+            if (_session is null) return "请先创建标注会话";
+            var confirmed = _session.Images.Count(image => image.Status == "approved");
+            if (confirmed < 5) return $"已确认 {confirmed} 张，还差 {5 - confirmed} 张可启动微调";
+            return DetectionActiveLearningStore.ReadyForBootstrap(_session)
+                ? $"已确认 {confirmed} 张，可启动预训练模型微调（探索性）"
+                : $"已确认 {confirmed} 张，但仍需为每个类别确认至少一个检测框";
+        }
+    }
     public bool CanPredictTrained => !IsBusy && _trainedModel is not null && File.Exists(_trainedModel);
     public bool CanStopOperation => _operation is not null;
     public string TrainedModel => _trainedModel is null ? "尚无初始检测模型" : Path.GetFileName(Path.GetDirectoryName(_trainedModel));
@@ -255,9 +266,7 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
 
     private async Task BootstrapAsync()
     {
-        if (_session is null || _session.Images.Count(image => image.Status == "approved") < 5 ||
-            !_session.Classes.All(category => _session.Images.Where(image => image.Status == "approved")
-                .SelectMany(image => image.ReviewedBoxes).Any(box => box.ClassId == category.Id)))
+        if (_session is null || !DetectionActiveLearningStore.ReadyForBootstrap(_session))
             throw new InvalidOperationException("请先人工确认至少 5 张图片，并保证每类至少有一个目标框。");
         if (_trainingBusy()) throw new InvalidOperationException("请先结束主训练任务。");
         if (BootstrapEpochs < 1 || BootstrapBatch < 1 || BootstrapSize < 64 ||
@@ -450,6 +459,7 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
         OnPropertyChanged(nameof(CanAddImages));
         OnPropertyChanged(nameof(CanExport));
         OnPropertyChanged(nameof(CanBootstrap));
+        OnPropertyChanged(nameof(TrainingEligibility));
     }
 
     private void UpdatePreview() => PreviewBoxes = Boxes.Select(box => box.ToBox()).ToArray();
@@ -506,6 +516,7 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
         image.Status = newStatus;
         await _store.SaveAsync(_session);
         OnPropertyChanged(nameof(CanBootstrap));
+        OnPropertyChanged(nameof(TrainingEligibility));
         RefreshQueue(newStatus == "pending" ? image.ImagePath : null);
         if (newStatus != "pending") SelectedRow = Items.FirstOrDefault(row => row.Image.Status == "pending") ?? SelectedRow;
         Status = newStatus switch
