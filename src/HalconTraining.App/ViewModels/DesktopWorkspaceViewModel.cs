@@ -91,6 +91,7 @@ public sealed class DesktopWorkspaceViewModel : ObservableModel, IDisposable
     public int SelectedPageIndex {get=>_page;set=>SetProperty(ref _page,value);}
     public bool IsBusy {get=>_busy;private set{if(SetProperty(ref _busy,value)){OnPropertyChanged(nameof(IsIdle));OnPropertyChanged(nameof(CanTrain));OnPropertyChanged(nameof(CanTest));OnPropertyChanged(nameof(CanSaveOverlay));}}}
     public bool IsIdle=>!IsBusy;
+    public bool HasActiveOperations => IsBusy || ActiveLearning.IsBusy;
     public bool CanTrain=>!IsBusy&&(_report?.Task is "semantic" or "classification")&&File.Exists(ModelPath)&&!_report.Issues.Any(issue=>issue.StartsWith("原图不存在：",StringComparison.Ordinal))&&_report.Samples.All(s=>!s.Missing)&&_report.SplitCounts.Values.All(n=>n>0);
     public bool CanTest=>!IsBusy&&SelectedModel?.CanTest==true;
     public string Status {get=>_status;private set=>SetProperty(ref _status,value);}
@@ -276,6 +277,6 @@ public sealed class DesktopWorkspaceViewModel : ObservableModel, IDisposable
     private static void OpenFolder(string? directory){if(directory is not null&&Directory.Exists(directory))Process.Start(new ProcessStartInfo(directory){UseShellExecute=true});}
     private static string Label(string task)=>task switch {"semantic"=>"语义分割","detection"=>"目标检测 · 水平框","rotated"=>"目标检测 · 旋转框","instance"=>"实例分割","classification"=>"图像分类","multi"=>"多标签分类","anomaly"=>"异常检测","ocr"=>"OCR · 需确认组件",_=>"无法识别任务"};
     public void RequestStop()=>_operation?.Cancel();
-    public async Task StopAndWaitAsync(){_lifetime.Cancel();_operation?.Cancel();while(IsBusy)await Task.Delay(50);}
+    public async Task StopAndWaitAsync(){_lifetime.Cancel();_operation?.Cancel();await ActiveLearning.StopAndWaitAsync();while(IsBusy)await Task.Delay(50);}
     public void Dispose(){_clock.Stop();_lifetime.Cancel();_lifetime.Dispose();}
 }
