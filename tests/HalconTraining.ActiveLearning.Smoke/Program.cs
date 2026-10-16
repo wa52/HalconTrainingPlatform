@@ -75,7 +75,25 @@ try
     try { DetectionActiveLearningStore.ValidateReviewedBoxes(approved, [invalid], restored!.Classes); }
     catch (InvalidDataException) { rejectedInvalid = true; }
     Require(rejectedInvalid, "Reject out-of-image boxes");
-    Console.WriteLine("PASS: detection active-learning import/rank/review/reload/COCO/validation");
+    var seed = await store.CreateSeedAsync(
+        [(imageA, 100, 80), (imageB, 100, 80), (imageC, 100, 80)],
+        ["scratch", "dent"]);
+    Require(seed.Images.Count == 3 && seed.Images.All(image => image.PredictedBoxes.Count == 0),
+        "Manual seed annotation without an existing detector");
+    Require(seed.Images.All(image => image.Status == "pending"), "Seed is never implicitly approved");
+    var seedExportRejected = false;
+    try { await store.ExportApprovedCocoAsync(seed); }
+    catch (InvalidOperationException) { seedExportRejected = true; }
+    Require(seedExportRejected, "Unapproved manual seed must not export");
+    seed.Images[0].ReviewedBoxes = [new DetectionBox(1, 0, 5, 5, 40, 30)];
+    seed.Images[0].HasDraft = true;
+    seed.Images[0].Status = "approved";
+    await store.SaveAsync(seed);
+    var seedExport = await store.ExportApprovedCocoAsync(seed);
+    using var seedCoco = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(seedExport, "annotations.json")));
+    Require(seedCoco.RootElement.GetProperty("images").GetArrayLength() == 1,
+        "Seed COCO export contains only hand-labelled approved images");
+    Console.WriteLine("PASS: detection seed/rank/review/reload/COCO/validation");
 }
 finally
 {
