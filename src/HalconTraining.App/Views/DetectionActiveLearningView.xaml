@@ -7,7 +7,7 @@
   <DockPanel Margin="0,0,0,12">
    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
     <Button Content="导入预测JSON" Command="{Binding ImportCommand}" IsEnabled="{Binding IsIdle}" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0"/>
-    <Button Content="导出已确认 COCO" Command="{Binding ExportCommand}" IsEnabled="{Binding HasSession}"/>
+    <Button Content="导出已确认 COCO" Command="{Binding ExportCommand}" IsEnabled="{Binding CanExport}"/>
    </StackPanel>
    <StackPanel>
     <TextBlock Text="目标检测 · 主动学习" Style="{StaticResource PageTitle}" FontSize="22"/>
@@ -45,8 +45,8 @@
      <DockPanel>
       <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
        <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
-        <Button Content="添加框" Command="{Binding AddBoxCommand}" Margin="0,0,6,0"/>
-        <Button Content="删除所选框" Command="{Binding RemoveBoxCommand}"/>
+        <Button Content="添加框" Command="{Binding AddBoxCommand}" IsEnabled="{Binding CanReview}" Margin="0,0,6,0"/>
+        <Button Content="删除所选框" Command="{Binding RemoveBoxCommand}" IsEnabled="{Binding CanRemoveBox}"/>
        </StackPanel>
        <TextBlock Text="检测框 · 原图像素坐标" FontWeight="SemiBold" VerticalAlignment="Center"/>
       </DockPanel>
@@ -64,16 +64,16 @@
     </Border>
     <DockPanel Grid.Row="3" Margin="0,10,0,0">
      <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
-      <Button Content="保存草稿" Command="{Binding SaveDraftCommand}" Margin="0,0,6,0"/>
-      <Button Content="需重标" Command="{Binding ReworkCommand}" Margin="0,0,6,0"/>
-      <Button Content="接受并下一张" Command="{Binding ApproveCommand}" Style="{StaticResource PrimaryButton}"/>
+      <Button Content="保存草稿" Command="{Binding SaveDraftCommand}" IsEnabled="{Binding CanReview}" Margin="0,0,6,0"/>
+      <Button Content="需重标" Command="{Binding ReworkCommand}" IsEnabled="{Binding CanReview}" Margin="0,0,6,0"/>
+      <Button Content="接受并下一张" Command="{Binding ApproveCommand}" IsEnabled="{Binding CanReview}" Style="{StaticResource PrimaryButton}"/>
      </StackPanel>
-     <Button Content="跳过 / 下一张" Command="{Binding NextCommand}" HorizontalAlignment="Left"/>
+     <Button Content="跳过 / 下一张" Command="{Binding NextCommand}" IsEnabled="{Binding CanReview}" HorizontalAlignment="Left"/>
     </DockPanel>
    </Grid>
   </Grid>
   <DockPanel Grid.Row="3" Margin="0,12,0,0">
-   <Button DockPanel.Dock="Right" Content="打开导出目录" Command="{Binding OpenExportCommand}"/>
+   <Button DockPanel.Dock="Right" Content="打开导出目录" Command="{Binding OpenExportCommand}" IsEnabled="{Binding CanOpenExport}"/>
    <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" FontSize="12"/>
   </DockPanel>
  </Grid>
