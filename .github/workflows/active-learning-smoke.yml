@@ -1,0 +1,24 @@
+name: Detection Active Learning Smoke
+
+on:
+  push:
+    paths:
+      - 'src/HalconTraining.App/Services/DetectionActiveLearningStore.cs'
+      - 'tests/HalconTraining.ActiveLearning.Smoke/**'
+      - '.github/workflows/active-learning-smoke.yml'
+  pull_request:
+    paths:
+      - 'src/HalconTraining.App/Services/DetectionActiveLearningStore.cs'
+      - 'tests/HalconTraining.ActiveLearning.Smoke/**'
+      - '.github/workflows/active-learning-smoke.yml'
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Run HALCON-free detection active-learning smoke test
+        run: dotnet run --project tests/HalconTraining.ActiveLearning.Smoke/HalconTraining.ActiveLearning.Smoke.csproj --configuration Release
