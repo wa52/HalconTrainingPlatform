@@ -74,9 +74,25 @@ public sealed class DetectionActiveLearningStore(string workspaceRoot)
             : (confidenceUncertainty, $"低置信度检测框：{weakest.Confidence:P0}");
     }
 
-    public static IReadOnlyList<DetectionReviewImage> Pending(DetectionReviewSession session) =>
-        session.Images.Where(image => image.Status == "pending")
-            .OrderByDescending(image => image.Priority).ThenBy(image => image.ImagePath, StringComparer.OrdinalIgnoreCase).ToArray();
+    public static IReadOnlyList<DetectionReviewImage> Pending(DetectionReviewSession session)
+    {
+        // One high-priority image from each workpiece/batch per round prevents one batch
+        // from consuming the entire review budget. Without groupId, images stay independent.
+        var groups = session.Images.Where(image => image.Status == "pending")
+            .GroupBy(image => string.IsNullOrWhiteSpace(image.GroupId) ? image.ImagePath : image.GroupId.Trim(),
+                StringComparer.OrdinalIgnoreCase)
+            .Select(group => new Queue<DetectionReviewImage>(group.OrderByDescending(image => image.Priority)
+                .ThenBy(image => image.ImagePath, StringComparer.OrdinalIgnoreCase)))
+            .OrderByDescending(group => group.Peek().Priority).ToArray();
+        var queue = new List<DetectionReviewImage>();
+        var remaining = groups.Sum(group => group.Count);
+        while (remaining > 0)
+        {
+            foreach (var group in groups)
+                if (group.Count > 0) { queue.Add(group.Dequeue()); remaining--; }
+        }
+        return queue;
+    }
 
     private static void ValidateBox(DetectionBox box, int width, int height, HashSet<int> ids)
     {
@@ -140,7 +156,7 @@ public sealed class DetectionActiveLearningStore(string workspaceRoot)
 
     public async Task SaveAsync(DetectionReviewSession session)
     {
-        if (string.IsNullOrWhiteSpace(session.Id) || session.Id.IndexOfAny(['/', '\\', ':']) >= 0)
+        if (string.IsNullOrWhiteSpace(session.Id) || session.Id.Contains('/') || session.Id.Contains('\\') || session.Id.Contains(':'))
             throw new InvalidDataException("无效的审核会话ID。");
         Directory.CreateDirectory(_sessions);
         session.UpdatedAt = DateTimeOffset.UtcNow;
@@ -158,7 +174,7 @@ public sealed class DetectionActiveLearningStore(string workspaceRoot)
     {
         if (!Directory.Exists(_sessions)) return null;
         foreach (var file in Directory.EnumerateFiles(_sessions, "*.json")
-            .OrderByDescending(Path.GetFileName, StringComparer.Ordinal))
+            .OrderByDescending(path => Path.GetFileName(path), StringComparer.Ordinal))
         {
             try
             {
