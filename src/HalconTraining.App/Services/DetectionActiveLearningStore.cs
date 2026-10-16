@@ -120,7 +120,7 @@ public sealed class DetectionActiveLearningStore(string workspaceRoot)
     {
         if (images.Count == 0) throw new InvalidDataException("请先选择至少一张原图。");
         if (classNames.Count == 0 || classNames.Any(string.IsNullOrWhiteSpace) ||
-            classNames.Distinct(StringComparer.OrdinalIgnoreCase).Count() != classNames.Count)
+            classNames.Select(name => name.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Count() != classNames.Count)
             throw new InvalidDataException("需要提供不重复的目标类别名称。");
         if (classNames.Any(name => name.Contains('/') || name.Contains('\\')))
             throw new InvalidDataException("类别名称不能包含路径分隔符。");
