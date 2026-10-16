@@ -148,6 +148,32 @@ public sealed class DetectionActiveLearningStore(string workspaceRoot)
         return session;
     }
 
+    /// <summary>Add more images without replacing existing confirmed annotations or classes.</summary>
+    public async Task<int> AppendSeedImagesAsync(DetectionReviewSession session,
+        IReadOnlyList<(string Path, int Width, int Height)> images)
+    {
+        if (session.Classes.Count == 0) throw new InvalidDataException("请先创建或导入类别。");
+        var existing = session.Images.Select(i => Path.GetFullPath(i.ImagePath))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var additions = new List<DetectionReviewImage>();
+        foreach (var item in images)
+        {
+            var full = Path.GetFullPath(item.Path);
+            if (!File.Exists(full)) throw new FileNotFoundException("原始图片不存在。", full);
+            if (item.Width <= 0 || item.Height <= 0)
+                throw new InvalidDataException("原图尺寸无效：" + full);
+            if (!existing.Add(full)) continue;
+            additions.Add(new DetectionReviewImage
+            {
+                ImagePath = full, Width = item.Width, Height = item.Height,
+                Priority = 1, Reason = "新增人工标注 · 尚无预测", Status = "pending"
+            });
+        }
+        session.Images.AddRange(additions);
+        if (additions.Count > 0) await SaveAsync(session);
+        return additions.Count;
+    }
+
     public async Task<DetectionReviewSession> ImportAsync(string filename)
     {
         var full = Path.GetFullPath(filename);
