@@ -1,23 +1,32 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using HalconDotNet;
 using HalconTraining.App.Services;
 
 namespace HalconTraining.App.Views;
 
-/// <summary>Read-only original image with editable rectangle1 review overlays.</summary>
+public sealed record DetectionDrawnBox(double Col1, double Row1, double Col2, double Row2);
+
+/// <summary>Original image with rectangle1 overlays and drag-to-add boxes.</summary>
 public partial class DetectionImageView : UserControl
 {
     public static readonly DependencyProperty ImagePathProperty =
         DependencyProperty.Register(nameof(ImagePath), typeof(string), typeof(DetectionImageView), new PropertyMetadata(null, Changed));
     public static readonly DependencyProperty BoxesProperty =
         DependencyProperty.Register(nameof(Boxes), typeof(IReadOnlyList<DetectionBox>), typeof(DetectionImageView), new PropertyMetadata(null, Changed));
+    public static readonly DependencyProperty DrawBoxCommandProperty =
+        DependencyProperty.Register(nameof(DrawBoxCommand), typeof(ICommand), typeof(DetectionImageView));
+    public ICommand? DrawBoxCommand { get => (ICommand?)GetValue(DrawBoxCommandProperty); set => SetValue(DrawBoxCommandProperty, value); }
     public string? ImagePath { get => (string?)GetValue(ImagePathProperty); set => SetValue(ImagePathProperty, value); }
     public IReadOnlyList<DetectionBox>? Boxes { get => (IReadOnlyList<DetectionBox>?)GetValue(BoxesProperty); set => SetValue(BoxesProperty, value); }
     private HImage? _image;
     private string? _loadedPath;
     private bool _ready;
+    private Point? _mouseStart;
+    private double _partTop, _partLeft, _partWidth, _partHeight;
+    private int _originalWidth, _originalHeight;
 
     public DetectionImageView()
     {
@@ -26,7 +35,35 @@ public partial class DetectionImageView : UserControl
         Loaded += (_, _) => Render();
         Unloaded += (_, _) => Release();
         SizeChanged += (_, _) => Render();
+        Display.PreviewMouseLeftButtonDown += (_, args) =>
+        {
+            if (_image is null || DrawBoxCommand is null || !IsEnabled) return;
+            _mouseStart = args.GetPosition(Display);
+            Display.CaptureMouse();
+            args.Handled = true;
+        };
+        Display.PreviewMouseLeftButtonUp += (_, args) =>
+        {
+            if (_mouseStart is not { } start) return;
+            var end = args.GetPosition(Display);
+            _mouseStart = null;
+            Display.ReleaseMouseCapture();
+            if (Math.Abs(end.X - start.X) < 5 || Math.Abs(end.Y - start.Y) < 5) return;
+            var first = PointToImage(start);
+            var last = PointToImage(end);
+            var box = new DetectionDrawnBox(
+                Math.Min(first.X, last.X), Math.Min(first.Y, last.Y),
+                Math.Max(first.X, last.X), Math.Max(first.Y, last.Y));
+            if (box.Col2 - box.Col1 >= 2 && box.Row2 - box.Row1 >= 2 &&
+                DrawBoxCommand?.CanExecute(box) == true) DrawBoxCommand.Execute(box);
+            args.Handled = true;
+        };
+        Display.LostMouseCapture += (_, _) => _mouseStart = null;
     }
+
+    private Point PointToImage(Point pixel) =>
+        new(Math.Clamp(_partLeft + pixel.X / Math.Max(1, Display.ActualWidth) * _partWidth, 0, _originalWidth),
+            Math.Clamp(_partTop + pixel.Y / Math.Max(1, Display.ActualHeight) * _partHeight, 0, _originalHeight));
 
     private static void Changed(DependencyObject target, DependencyPropertyChangedEventArgs args) =>
         ((DetectionImageView)target).Render();
@@ -36,6 +73,7 @@ public partial class DetectionImageView : UserControl
         _image?.Dispose();
         _image = null;
         _loadedPath = null;
+        _mouseStart = null;
     }
 
     private void Render()
@@ -64,6 +102,12 @@ public partial class DetectionImageView : UserControl
             var ratio = Math.Max(1, Display.ActualWidth) / Math.Max(1, Display.ActualHeight);
             var visibleWidth = Math.Max(width, height * ratio);
             var visibleHeight = visibleWidth / ratio;
+            _originalWidth = width;
+            _originalHeight = height;
+            _partTop = (height - visibleHeight) / 2;
+            _partLeft = (width - visibleWidth) / 2;
+            _partWidth = visibleWidth;
+            _partHeight = visibleHeight;
             window.SetPart((height - visibleHeight) / 2, (width - visibleWidth) / 2,
                 (height + visibleHeight) / 2 - 1, (width + visibleWidth) / 2 - 1);
             using (var channels = _image.CountChannels())
