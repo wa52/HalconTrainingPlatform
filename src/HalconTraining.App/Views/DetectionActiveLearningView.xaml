@@ -7,6 +7,7 @@
   <DockPanel Margin="0,0,0,12">
    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
     <Button Content="选择图片先标注" Command="{Binding SeedCommand}" IsEnabled="{Binding IsIdle}" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0"/>
+    <Button Content="继续添加图片" Command="{Binding AddImagesCommand}" IsEnabled="{Binding CanAddImages}" Margin="0,0,8,0"/>
     <Button Content="已有模型批量预测" Command="{Binding PredictExistingCommand}" IsEnabled="{Binding IsIdle}" Margin="0,0,8,0"/>
     <Button Content="导入预测JSON" Command="{Binding ImportCommand}" IsEnabled="{Binding IsIdle}" Margin="0,0,8,0"/>
     <Button Content="导出已确认 COCO" Command="{Binding ExportCommand}" IsEnabled="{Binding CanExport}"/>
