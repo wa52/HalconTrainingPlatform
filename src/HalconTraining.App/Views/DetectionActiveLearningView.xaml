@@ -3,15 +3,17 @@
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  xmlns:views="clr-namespace:HalconTraining.App.Views">
  <Grid Margin="20">
-  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
   <DockPanel Margin="0,0,0,12">
    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-    <Button Content="导入预测JSON" Command="{Binding ImportCommand}" IsEnabled="{Binding IsIdle}" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0"/>
+    <Button Content="选择图片先标注" Command="{Binding SeedCommand}" IsEnabled="{Binding IsIdle}" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0"/>
+    <Button Content="已有模型批量预测" Command="{Binding PredictExistingCommand}" IsEnabled="{Binding IsIdle}" Margin="0,0,8,0"/>
+    <Button Content="导入预测JSON" Command="{Binding ImportCommand}" IsEnabled="{Binding IsIdle}" Margin="0,0,8,0"/>
     <Button Content="导出已确认 COCO" Command="{Binding ExportCommand}" IsEnabled="{Binding CanExport}"/>
    </StackPanel>
    <StackPanel>
     <TextBlock Text="目标检测 · 主动学习" Style="{StaticResource PageTitle}" FontSize="22"/>
-    <TextBlock Text="按不确定性优先审核 · 仅人工确认的标签参与导出" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,4,0,0"/>
+    <TextBlock Text="少量人工标注 → 初始训练 → 批量预测 → 审核循环" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,4,0,0"/>
    </StackPanel>
   </DockPanel>
   <Border Grid.Row="1" Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="5" Padding="12" Margin="0,0,0,12">
@@ -23,7 +25,27 @@
     <TextBlock Text="{Binding ClassesInfo}" FontSize="12" Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
    </StackPanel>
   </Border>
-  <Grid Grid.Row="2">
+  <Border Grid.Row="2" Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="5" Padding="10" Margin="0,0,0,12">
+    <DockPanel>
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+        <Button Content="训练初始模型" Command="{Binding BootstrapCommand}" IsEnabled="{Binding CanBootstrap}" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0"/>
+        <Button Content="用初始模型批量预测" Command="{Binding PredictTrainedCommand}" IsEnabled="{Binding CanPredictTrained}" Margin="0,0,8,0"/>
+        <Button Content="停止" Command="{Binding StopOperationCommand}" IsEnabled="{Binding CanStopOperation}"/>
+      </StackPanel>
+      <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+        <TextBlock Text="初始训练" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,12,0"/>
+        <TextBlock Text="Epoch" VerticalAlignment="Center"/>
+        <TextBox Text="{Binding BootstrapEpochs,UpdateSourceTrigger=LostFocus,ValidatesOnExceptions=True}" Width="47" Margin="5,0,12,0"/>
+        <TextBlock Text="Batch" VerticalAlignment="Center"/>
+        <TextBox Text="{Binding BootstrapBatch,UpdateSourceTrigger=LostFocus,ValidatesOnExceptions=True}" Width="40" Margin="5,0,12,0"/>
+        <TextBlock Text="尺寸" VerticalAlignment="Center"/>
+        <TextBox Text="{Binding BootstrapSize,UpdateSourceTrigger=LostFocus,ValidatesOnExceptions=True}" Width="55" Margin="5,0,12,0"/>
+        <TextBlock Text="学习率" VerticalAlignment="Center"/>
+        <TextBox Text="{Binding BootstrapRate,UpdateSourceTrigger=LostFocus,ValidatesOnExceptions=True}" Width="75" Margin="5,0,0,0"/>
+      </StackPanel>
+    </DockPanel>
+  </Border>
+  <Grid Grid.Row="3">
    <Grid.ColumnDefinitions><ColumnDefinition Width="255"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
    <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Background="White" CornerRadius="5" Margin="0,0,12,0">
     <DockPanel>
@@ -39,7 +61,7 @@
    </Border>
    <Grid Grid.Column="1">
     <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="195"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-    <views:DetectionImageView ImagePath="{Binding PreviewPath}" Boxes="{Binding PreviewBoxes}"/>
+    <views:DetectionImageView ImagePath="{Binding PreviewPath}" Boxes="{Binding PreviewBoxes}" DrawBoxCommand="{Binding DrawBoxCommand}"/>
     <TextBlock Grid.Row="1" Text="{Binding SelectedDetails}" Foreground="{StaticResource MutedBrush}" Margin="0,8,0,8" TextWrapping="Wrap"/>
     <Border Grid.Row="2" Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="5" Padding="8">
      <DockPanel>
@@ -48,7 +70,7 @@
         <Button Content="添加框" Command="{Binding AddBoxCommand}" IsEnabled="{Binding CanReview}" Margin="0,0,6,0"/>
         <Button Content="删除所选框" Command="{Binding RemoveBoxCommand}" IsEnabled="{Binding CanRemoveBox}"/>
        </StackPanel>
-       <TextBlock Text="检测框 · 原图像素坐标" FontWeight="SemiBold" VerticalAlignment="Center"/>
+       <TextBlock Text="检测框 · 可直接在图片上拖拽画框，或输入像素坐标" FontWeight="SemiBold" VerticalAlignment="Center"/>
       </DockPanel>
       <DataGrid ItemsSource="{Binding Boxes}" SelectedItem="{Binding SelectedBox}" AutoGenerateColumns="False" CanUserAddRows="False" RowHeight="32" Height="140">
        <DataGrid.Columns>
@@ -72,7 +94,7 @@
     </DockPanel>
    </Grid>
   </Grid>
-  <DockPanel Grid.Row="3" Margin="0,12,0,0">
+  <DockPanel Grid.Row="4" Margin="0,12,0,0">
    <Button DockPanel.Dock="Right" Content="打开导出目录" Command="{Binding OpenExportCommand}" IsEnabled="{Binding CanOpenExport}"/>
    <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" FontSize="12"/>
   </DockPanel>
