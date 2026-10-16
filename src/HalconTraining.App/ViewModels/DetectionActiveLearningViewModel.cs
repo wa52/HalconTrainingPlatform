@@ -472,6 +472,12 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
         };
     }
 
+    public async Task StopAndWaitAsync()
+    {
+        _operation?.Cancel();
+        while (IsBusy) await Task.Delay(50);
+    }
+
     private async Task ExportAsync()
     {
         if (_session is null) return;
