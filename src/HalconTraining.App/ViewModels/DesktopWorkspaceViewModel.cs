@@ -44,6 +44,7 @@ public sealed class DesktopWorkspaceViewModel : ObservableModel, IDisposable
     public DesktopWorkspaceViewModel(TrainingWorkspace workspace,IWorkspaceDialogs dialogs,ITrainingWorkerClient environment)
     {
         _workspace=workspace;_dialogs=dialogs;_environment=environment;
+        ActiveLearning=new DetectionActiveLearningViewModel(workspace.Store.Root);
         BrowseDatasetCommand=new(async token=>{var file=_dialogs.Dataset();if(file is not null)await SelectDatasetAsync(file,token);});
         RepartitionCommand=new(token=>SelectDatasetAsync(DatasetPath,token));
         StartTrainingCommand=new(_=>TrainAsync());
@@ -85,6 +86,7 @@ public sealed class DesktopWorkspaceViewModel : ObservableModel, IDisposable
     public string? TrainingPreviewMask {get=>_trainingMask;private set=>SetProperty(ref _trainingMask,value);}
     public string? TrainingTruthMask {get=>_trainingTruth;private set=>SetProperty(ref _trainingTruth,value);}
     public int ValidationInterval {get=>_validationInterval;set=>SetProperty(ref _validationInterval,value);}
+    public DetectionActiveLearningViewModel ActiveLearning {get;}
     public string Root=>_workspace.Store.Root;
     public int SelectedPageIndex {get=>_page;set=>SetProperty(ref _page,value);}
     public bool IsBusy {get=>_busy;private set{if(SetProperty(ref _busy,value)){OnPropertyChanged(nameof(IsIdle));OnPropertyChanged(nameof(CanTrain));OnPropertyChanged(nameof(CanTest));OnPropertyChanged(nameof(CanSaveOverlay));}}}
@@ -133,6 +135,7 @@ public sealed class DesktopWorkspaceViewModel : ObservableModel, IDisposable
     public string ResultSummary=>SelectedResult is null?"直接选择原图，无需测试字典或人工标注。":SelectedResult.Task=="classification"?$"{SelectedResult.File} · 预测：{SelectedResult.ClassName} · 置信度 {SelectedResult.Confidence:P2} · 推理 {SelectedResult.InferenceMs:F1} ms":$"{SelectedResult.File} · {SelectedResult.Width} × {SelectedResult.Height} · 推理 {SelectedResult.InferenceMs:F1} ms · 前景 {SelectedResult.Areas.Where(a=>a.ClassId!=0).Sum(a=>a.Ratio):P2}";
     public async Task InitializeAsync()
     {
+        await ActiveLearning.InitializeAsync();
         await SafeAsync(async()=>
         {
             var session=await _workspace.Store.LoadSessionAsync();
