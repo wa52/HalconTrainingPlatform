@@ -8,7 +8,7 @@ namespace HalconTraining.App.Services;
 /// <summary>
 /// Runs pretrained YOLO in its own Python process, without loading PyTorch into the WPF/HALCON process.
 /// Configure HALCON_TRAINING_PYTHON to select a dedicated Python venv.
-</summary>
+/// </summary>
 public sealed class YoloProcessRunner : IHalconProcessRunner
 {
     public async Task<WorkerOutput> RunAsync(IReadOnlyList<string> arguments, IProgress<string>? output,
