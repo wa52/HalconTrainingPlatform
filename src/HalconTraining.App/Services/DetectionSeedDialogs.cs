@@ -63,7 +63,7 @@ public static class DetectionSeedDialogs
         content.Children.Add(buttons);
         window.Content = content;
         if (window.ShowDialog() != true) return null;
-        var classes = input.Text.Split(',', '，', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        var classes = input.Text.Split(new[] { ',', '，' }, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
         if (classes.Length == 0) throw new InvalidDataException("至少需要一个类别。");
         return classes;
     }
