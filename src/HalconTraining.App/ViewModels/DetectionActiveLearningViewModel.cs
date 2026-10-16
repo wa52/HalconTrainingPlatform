@@ -78,9 +78,28 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
     public ObservableCollection<DetectionReviewRow> Items { get; } = [];
     public ObservableCollection<DetectionBoxEditor> Boxes { get; } = [];
     public string Status { get => _status; private set => SetProperty(ref _status, value); }
-    public string LastExport { get => _lastExport; private set => SetProperty(ref _lastExport, value); }
-    public bool IsBusy { get => _busy; private set { if (SetProperty(ref _busy, value)) OnPropertyChanged(nameof(IsIdle)); } }
+    public string LastExport
+    {
+        get => _lastExport;
+        private set { if (SetProperty(ref _lastExport, value)) OnPropertyChanged(nameof(CanOpenExport)); }
+    }
+    public bool IsBusy
+    {
+        get => _busy;
+        private set
+        {
+            if (!SetProperty(ref _busy, value)) return;
+            OnPropertyChanged(nameof(IsIdle));
+            OnPropertyChanged(nameof(CanReview));
+            OnPropertyChanged(nameof(CanRemoveBox));
+            OnPropertyChanged(nameof(CanExport));
+        }
+    }
     public bool IsIdle => !IsBusy;
+    public bool CanReview => !IsBusy && SelectedRow is not null;
+    public bool CanRemoveBox => CanReview && SelectedBox is not null;
+    public bool CanExport => !IsBusy && _session?.Images.Any(image => image.Status == "approved") == true;
+    public bool CanOpenExport => Directory.Exists(LastExport);
     public bool HasSession => _session is not null;
     public string ModelInfo => _session is null ? "尚未导入预测" : $"模型：{_session.ModelId} · {_session.Classes.Count} 类";
     public string ClassesInfo => _session is null ? "" : string.Join("    ", _session.Classes.Select(c => $"{c.Id} = {c.Name}"));
@@ -107,9 +126,15 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
             UpdatePreview();
             OnPropertyChanged(nameof(PreviewPath));
             OnPropertyChanged(nameof(SelectedDetails));
+            OnPropertyChanged(nameof(CanReview));
+            OnPropertyChanged(nameof(CanRemoveBox));
         }
     }
-    public DetectionBoxEditor? SelectedBox { get => _selectedBox; set => SetProperty(ref _selectedBox, value); }
+    public DetectionBoxEditor? SelectedBox
+    {
+        get => _selectedBox;
+        set { if (SetProperty(ref _selectedBox, value)) OnPropertyChanged(nameof(CanRemoveBox)); }
+    }
     public string? PreviewPath => SelectedRow?.Image.ImagePath;
     public IReadOnlyList<DetectionBox> PreviewBoxes { get => _previewBoxes; private set => SetProperty(ref _previewBoxes, value); }
     public string SelectedDetails => SelectedRow is null ? "选择待审核图片" :
@@ -169,6 +194,7 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
         OnPropertyChanged(nameof(ModelInfo));
         OnPropertyChanged(nameof(ClassesInfo));
         OnPropertyChanged(nameof(HasSession));
+        OnPropertyChanged(nameof(CanExport));
     }
 
     private void UpdatePreview() => PreviewBoxes = Boxes.Select(box => box.ToBox()).ToArray();
