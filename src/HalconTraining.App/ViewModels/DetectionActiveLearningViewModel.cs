@@ -264,6 +264,34 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
         Status = $"新增 {added} 张原图；重复图片已跳过，之前的审核与标注不会被清除。";
     }
 
+    private string ResolveYoloBaseModel()
+    {
+        // Continue fine-tuning only when the previous YOLO weights have precisely
+        // the same class mapping as the current human-reviewed dataset.
+        if (_session is null || _trainedModel is null ||
+            !Path.GetExtension(_trainedModel).Equals(".pt", StringComparison.OrdinalIgnoreCase) ||
+            !File.Exists(_trainedModel))
+            return "yolo26n.pt";
+        var manifest = Path.Combine(Path.GetDirectoryName(_trainedModel)!, "manifest.json");
+        if (!File.Exists(manifest)) return "yolo26n.pt";
+        try
+        {
+            using var json = JsonDocument.Parse(File.ReadAllText(manifest));
+            var root = json.RootElement;
+            var ids = root.GetProperty("classIds").EnumerateArray().Select(v => v.GetInt32()).ToArray();
+            var names = root.GetProperty("classNames").EnumerateArray().Select(v => v.GetString()).ToArray();
+            if (ids.Length == _session.Classes.Count &&
+                _session.Classes.Select((category, index) =>
+                    category.Id == ids[index] && category.Name == names[index]).All(match => match))
+                return _trainedModel;
+        }
+        catch (Exception error) when (error is IOException or JsonException or KeyNotFoundException or InvalidOperationException)
+        {
+            // A corrupt or mismatched model never silently overrides the pretrained seed.
+        }
+        return "yolo26n.pt";
+    }
+
     private async Task BootstrapAsync()
     {
         if (_session is null || !DetectionActiveLearningStore.ReadyForBootstrap(_session))
@@ -273,6 +301,7 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
             BootstrapSize % 32 != 0 || !double.IsFinite(BootstrapRate) || BootstrapRate <= 0)
             throw new InvalidOperationException("训练参数无效：尺寸≥64且为32的倍数，Batch/Epoch/学习率需大于0。");
         var yolo = TrainingEngine == "YOLO · 预训练";
+        var yoloBase = yolo ? ResolveYoloBaseModel() : "";
         var backbone = Path.Combine(_workspaceRoot, "assets", "pretrained", "pretrained_dl_classifier_compact.hdl");
         if (!yolo && !File.Exists(backbone))
             throw new FileNotFoundException("找不到 HALCON compact 检测骨干基础模型。", backbone);
@@ -304,7 +333,7 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
             });
             IReadOnlyList<string> arguments = yolo
                 ? ["train", "--coco", Path.Combine(snapshot, "annotations.json"),
-                   "--output", output, "--model", "yolo26n.pt",
+                   "--output", output, "--model", yoloBase,
                    "--epochs", BootstrapEpochs.ToString(CultureInfo.InvariantCulture),
                    "--batch", BootstrapBatch.ToString(CultureInfo.InvariantCulture),
                    "--imgsz", BootstrapSize.ToString(CultureInfo.InvariantCulture),
