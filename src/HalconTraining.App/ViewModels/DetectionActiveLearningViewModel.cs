@@ -74,6 +74,7 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
         SaveDraftCommand = new AsyncCommand(_ => ExecuteAsync(() => SaveReviewAsync("pending")));
         ExportCommand = new AsyncCommand(_ => ExecuteAsync(ExportAsync));
         AddBoxCommand = new RelayCommand(_ => AddBox());
+        DrawBoxCommand = new RelayCommand(value => DrawBox(value));
         RemoveBoxCommand = new RelayCommand(_ => RemoveBox());
         NextCommand = new RelayCommand(_ => SelectNext());
         OpenExportCommand = new RelayCommand(_ =>
@@ -94,6 +95,7 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
     public AsyncCommand SaveDraftCommand { get; }
     public AsyncCommand ExportCommand { get; }
     public RelayCommand AddBoxCommand { get; }
+    public RelayCommand DrawBoxCommand { get; }
     public RelayCommand RemoveBoxCommand { get; }
     public RelayCommand NextCommand { get; }
     public RelayCommand OpenExportCommand { get; }
@@ -404,6 +406,20 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
     }
 
     private void UpdatePreview() => PreviewBoxes = Boxes.Select(box => box.ToBox()).ToArray();
+
+    private void DrawBox(object? parameter)
+    {
+        if (IsBusy || SelectedRow is null || _session is null || parameter is not DetectionDrawnBox box)
+            return;
+        var categoryId = SelectedBox?.ClassId ?? _session.Classes[0].Id;
+        var editor = new DetectionBoxEditor(new DetectionBox(categoryId, 0,
+            box.Col1, box.Row1, box.Col2, box.Row2));
+        editor.PropertyChanged += (_, _) => UpdatePreview();
+        Boxes.Add(editor);
+        SelectedBox = editor;
+        UpdatePreview();
+        Status = "已在原图绘制检测框；请确认类别ID后点击「接受并下一张」。";
+    }
 
     private void AddBox()
     {
