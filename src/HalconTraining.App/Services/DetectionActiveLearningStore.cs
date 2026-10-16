@@ -44,6 +44,7 @@ public sealed class DetectionReviewSession
     public string Id { get; set; } = "";
     public string ModelId { get; set; } = "";
     public string SourcePredictionFile { get; set; } = "";
+    public string? LastTrainedModelPath { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public List<DetectionCategory> Classes { get; set; } = [];
