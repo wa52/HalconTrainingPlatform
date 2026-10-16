@@ -18,10 +18,14 @@ public sealed class YoloProcessRunner : IHalconProcessRunner
         if (!File.Exists(script)) throw new FileNotFoundException("找不到 YOLO Python Worker，请重新生成软件。", script);
         var python = Environment.GetEnvironmentVariable("HALCON_TRAINING_PYTHON");
         if (string.IsNullOrWhiteSpace(python)) python = "python";
+        var workingDirectory = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "HalconTrainingPlatform", "yolo");
+        Directory.CreateDirectory(workingDirectory);
         var start = new ProcessStartInfo(python)
         {
             UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true,
-            RedirectStandardError = true, WorkingDirectory = AppContext.BaseDirectory
+            RedirectStandardError = true, WorkingDirectory = workingDirectory
         };
         start.ArgumentList.Add(script);
         foreach (var argument in arguments) start.ArgumentList.Add(argument);
