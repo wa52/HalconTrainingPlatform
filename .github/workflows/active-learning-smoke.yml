@@ -5,11 +5,15 @@ on:
     paths:
       - 'src/HalconTraining.App/Services/DetectionActiveLearningStore.cs'
       - 'tests/HalconTraining.ActiveLearning.Smoke/**'
+      - 'tests/test_yolo_active_learning.py'
+      - 'tools/yolo_active_learning.py'
       - '.github/workflows/active-learning-smoke.yml'
   pull_request:
     paths:
       - 'src/HalconTraining.App/Services/DetectionActiveLearningStore.cs'
       - 'tests/HalconTraining.ActiveLearning.Smoke/**'
+      - 'tests/test_yolo_active_learning.py'
+      - 'tools/yolo_active_learning.py'
       - '.github/workflows/active-learning-smoke.yml'
 
 jobs:
@@ -20,5 +24,10 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate approved COCO to YOLO conversion without GPU
+        run: python -m unittest discover -s tests -p 'test_yolo_active_learning.py' -v
       - name: Run HALCON-free detection active-learning smoke test
         run: dotnet run --project tests/HalconTraining.ActiveLearning.Smoke/HalconTraining.ActiveLearning.Smoke.csproj --configuration Release
