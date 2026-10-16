@@ -44,11 +44,13 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
     private readonly DetectionActiveLearningStore _store;
     private readonly string _workspaceRoot;
     private readonly IHalconProcessRunner _runner;
+    private readonly IHalconProcessRunner _yoloRunner;
     private readonly Func<bool> _trainingBusy;
     private CancellationTokenSource? _operation;
     private string? _trainedModel;
-    private int _bootstrapEpochs = 5, _bootstrapBatch = 1, _bootstrapSize = 512;
-    private double _bootstrapRate = .0001;
+    private int _bootstrapEpochs = 40, _bootstrapBatch = 2, _bootstrapSize = 640;
+    private double _bootstrapRate = .001;
+    private string _trainingEngine = "YOLO · 预训练";
     private DetectionReviewSession? _session;
     private DetectionReviewRow? _selectedRow;
     private DetectionBoxEditor? _selectedBox;
@@ -57,11 +59,12 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
     private string _lastExport = "";
     private IReadOnlyList<DetectionBox> _previewBoxes = [];
 
-    public DetectionActiveLearningViewModel(string workspaceRoot, IHalconProcessRunner runner, Func<bool> trainingBusy)
+    public DetectionActiveLearningViewModel(string workspaceRoot, IHalconProcessRunner runner, IHalconProcessRunner yoloRunner, Func<bool> trainingBusy)
     {
         _workspaceRoot = workspaceRoot;
         _store = new DetectionActiveLearningStore(workspaceRoot);
         _runner = runner;
+        _yoloRunner = yoloRunner;
         _trainingBusy = trainingBusy;
         ImportCommand = new AsyncCommand(_ => ExecuteAsync(ImportAsync));
         SeedCommand = new AsyncCommand(_ => ExecuteAsync(CreateSeedAsync));
@@ -126,12 +129,25 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
     public bool IsIdle => !IsBusy;
     public bool CanReview => !IsBusy && SelectedRow is not null;
     public bool CanBootstrap => !IsBusy && _session is not null &&
-        _session.Images.Count(image => image.Status == "approved") >= 3 &&
+        _session.Images.Count(image => image.Status == "approved") >= 5 &&
         _session.Classes.All(category => _session.Images.Where(image => image.Status == "approved")
             .SelectMany(image => image.ReviewedBoxes).Any(box => box.ClassId == category.Id));
     public bool CanPredictTrained => !IsBusy && _trainedModel is not null && File.Exists(_trainedModel);
     public bool CanStopOperation => _operation is not null;
     public string TrainedModel => _trainedModel is null ? "尚无初始检测模型" : Path.GetFileName(Path.GetDirectoryName(_trainedModel));
+    public string TrainingEngine
+    {
+        get => _trainingEngine;
+        set
+        {
+            if (value != "YOLO · 预训练" && value != "HALCON · 检测") return;
+            if (!SetProperty(ref _trainingEngine, value)) return;
+            BootstrapEpochs = value == "YOLO · 预训练" ? 40 : 5;
+            BootstrapBatch = value == "YOLO · 预训练" ? 2 : 1;
+            BootstrapSize = value == "YOLO · 预训练" ? 640 : 512;
+            BootstrapRate = value == "YOLO · 预训练" ? .001 : .0001;
+        }
+    }
     public int BootstrapEpochs { get => _bootstrapEpochs; set => SetProperty(ref _bootstrapEpochs, value); }
     public int BootstrapBatch { get => _bootstrapBatch; set => SetProperty(ref _bootstrapBatch, value); }
     public int BootstrapSize { get => _bootstrapSize; set => SetProperty(ref _bootstrapSize, value); }
@@ -220,22 +236,23 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
         OnPropertyChanged(nameof(TrainedModel));
         OnPropertyChanged(nameof(CanPredictTrained));
         RefreshQueue();
-        Status = $"已创建初始标注：{images.Count}张图片。请在图片上拖框、选类别并逐张接受；至少确认3张才能快速训练。";
+        Status = $"已创建初始标注：{images.Count} 张。标多少由你决定；人工确认至少 5 张且每类有目标框，即可微调预训练模型。";
     }
 
     private async Task BootstrapAsync()
     {
-        if (_session is null || _session.Images.Count(image => image.Status == "approved") < 3 ||
+        if (_session is null || _session.Images.Count(image => image.Status == "approved") < 5 ||
             !_session.Classes.All(category => _session.Images.Where(image => image.Status == "approved")
                 .SelectMany(image => image.ReviewedBoxes).Any(box => box.ClassId == category.Id)))
-            throw new InvalidOperationException("请先人工确认至少3张图片，并覆盖全部类别。");
+            throw new InvalidOperationException("请先人工确认至少 5 张图片，并保证每类至少有一个目标框。");
         if (_trainingBusy()) throw new InvalidOperationException("请先结束主训练任务。");
         if (BootstrapEpochs < 1 || BootstrapBatch < 1 || BootstrapSize < 64 ||
             BootstrapSize % 32 != 0 || !double.IsFinite(BootstrapRate) || BootstrapRate <= 0)
             throw new InvalidOperationException("训练参数无效：尺寸≥64且为32的倍数，Batch/Epoch/学习率需大于0。");
+        var yolo = TrainingEngine == "YOLO · 预训练";
         var backbone = Path.Combine(_workspaceRoot, "assets", "pretrained", "pretrained_dl_classifier_compact.hdl");
-        if (!File.Exists(backbone))
-            throw new FileNotFoundException("找不到 compact 检测基础网络骨干模型，请从有授权的 HALCON 安装目录复制。", backbone);
+        if (!yolo && !File.Exists(backbone))
+            throw new FileNotFoundException("找不到 HALCON compact 检测骨干基础模型。", backbone);
         var snapshot = await _store.ExportApprovedCocoAsync(_session!);
         var output = Path.Combine(_workspaceRoot, "models", "detection", _session!.Id,
             "run_" + DateTimeOffset.Now.ToString("yyyyMMdd_HHmmss") + "_" + Guid.NewGuid().ToString("N")[..8]);
@@ -255,29 +272,36 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
                     var stage = item.TryGetProperty("stage", out var value) ? value.GetString() : null;
                     if (stage is "训练" or "轮次完成")
                     {
-                        var detail = item.GetProperty("detail");
-                        Status = $"检测训练 · {detail.GetProperty("epoch").GetInt32()}/{BootstrapEpochs} Epoch · {stage}";
+                        var detail = item.TryGetProperty("detail", out var nested) ? nested : item;
+                        if (detail.TryGetProperty("epoch", out var epoch))
+                            Status = $"检测训练 · {epoch.GetInt32()}/{BootstrapEpochs} Epoch · {stage}";
                     }
                 }
                 catch (JsonException) { /* Worker also returns final JSON lines. */ }
             });
-            var result = await _runner.RunAsync(
-                ["--detection-bootstrap", Path.Combine(snapshot, "annotations.json"),
-                 "--backbone-file", backbone, "--output-dir", output,
-                 "--epochs", BootstrapEpochs.ToString(CultureInfo.InvariantCulture),
-                 "--batch", BootstrapBatch.ToString(CultureInfo.InvariantCulture),
-                 "--width", BootstrapSize.ToString(CultureInfo.InvariantCulture),
-                 "--height", BootstrapSize.ToString(CultureInfo.InvariantCulture),
-                 "--rate", BootstrapRate.ToString(CultureInfo.InvariantCulture)],
-                progress, cts.Token);
+            IReadOnlyList<string> arguments = yolo
+                ? ["train", "--coco", Path.Combine(snapshot, "annotations.json"),
+                   "--output", output, "--model", "yolo26n.pt",
+                   "--epochs", BootstrapEpochs.ToString(CultureInfo.InvariantCulture),
+                   "--batch", BootstrapBatch.ToString(CultureInfo.InvariantCulture),
+                   "--imgsz", BootstrapSize.ToString(CultureInfo.InvariantCulture),
+                   "--lr", BootstrapRate.ToString(CultureInfo.InvariantCulture)]
+                : ["--detection-bootstrap", Path.Combine(snapshot, "annotations.json"),
+                   "--backbone-file", backbone, "--output-dir", output,
+                   "--epochs", BootstrapEpochs.ToString(CultureInfo.InvariantCulture),
+                   "--batch", BootstrapBatch.ToString(CultureInfo.InvariantCulture),
+                   "--width", BootstrapSize.ToString(CultureInfo.InvariantCulture),
+                   "--height", BootstrapSize.ToString(CultureInfo.InvariantCulture),
+                   "--rate", BootstrapRate.ToString(CultureInfo.InvariantCulture)];
+            var result = await (yolo ? _yoloRunner : _runner).RunAsync(arguments, progress, cts.Token);
             if (result.ExitCode != 0) throw new InvalidOperationException(result.Error);
-            _trainedModel = Path.Combine(output, "model.hdl");
+            _trainedModel = Path.Combine(output, yolo ? "model.pt" : "model.hdl");
             if (!File.Exists(_trainedModel)) throw new FileNotFoundException("训练进程未产生模型文件。", _trainedModel);
             _session.LastTrainedModelPath = _trainedModel;
             await _store.SaveAsync(_session);
             OnPropertyChanged(nameof(TrainedModel));
             OnPropertyChanged(nameof(CanPredictTrained));
-            Status = "小样本模型训练完成（未精度验收）。可点击「使用刚训练的模型预测」继续标注。";
+            Status = "预训练模型微调完成（未精度验收）。可使用刚训练的模型批量预测，结果仍需逐张审核。";
         }
         catch (OperationCanceledException)
         {
@@ -341,9 +365,14 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
                 }
                 catch (JsonException) { }
             });
-            var result = await _runner.RunAsync(
-                ["--detection-predict", modelFile, "--image-list", list, "--output-json", resultPath],
-                progress, cts.Token);
+            var isYolo = Path.GetExtension(modelFile).Equals(".pt", StringComparison.OrdinalIgnoreCase);
+            if (!isYolo && !Path.GetExtension(modelFile).Equals(".hdl", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("只支持 YOLO .pt 或 HALCON .hdl 目标检测模型。");
+            IReadOnlyList<string> arguments = isYolo
+                ? ["predict", "--model", modelFile, "--images-json", list,
+                   "--output-json", resultPath, "--imgsz", BootstrapSize.ToString(CultureInfo.InvariantCulture)]
+                : ["--detection-predict", modelFile, "--image-list", list, "--output-json", resultPath];
+            var result = await (isYolo ? _yoloRunner : _runner).RunAsync(arguments, progress, cts.Token);
             if (result.ExitCode != 0) throw new InvalidOperationException(result.Error);
             var next = await _store.ImportAsync(resultPath);
             // Preserve verified labels only when class IDs and names are exactly the same.
