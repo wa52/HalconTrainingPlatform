@@ -44,7 +44,7 @@ public sealed class DesktopWorkspaceViewModel : ObservableModel, IDisposable
     public DesktopWorkspaceViewModel(TrainingWorkspace workspace,IWorkspaceDialogs dialogs,ITrainingWorkerClient environment)
     {
         _workspace=workspace;_dialogs=dialogs;_environment=environment;
-        ActiveLearning=new DetectionActiveLearningViewModel(workspace.Store.Root);
+        ActiveLearning=new DetectionActiveLearningViewModel(workspace.Store.Root, new HalconProcessRunner(), () => IsBusy);
         BrowseDatasetCommand=new(async token=>{var file=_dialogs.Dataset();if(file is not null)await SelectDatasetAsync(file,token);});
         RepartitionCommand=new(token=>SelectDatasetAsync(DatasetPath,token));
         StartTrainingCommand=new(_=>TrainAsync());
