@@ -149,6 +149,14 @@ public sealed class DetectionActiveLearningStore(string workspaceRoot)
     }
 
     /// <summary>Add more images without replacing existing confirmed annotations or classes.</summary>
+    public static bool ReadyForBootstrap(DetectionReviewSession session)
+    {
+        var confirmed = session.Images.Where(image => image.Status == "approved").ToArray();
+        return confirmed.Length >= 5 && session.Classes.Count > 0 &&
+            session.Classes.All(category => confirmed.SelectMany(image => image.ReviewedBoxes)
+                .Any(box => box.ClassId == category.Id));
+    }
+
     public async Task<int> AppendSeedImagesAsync(DetectionReviewSession session,
         IReadOnlyList<(string Path, int Width, int Height)> images)
     {
