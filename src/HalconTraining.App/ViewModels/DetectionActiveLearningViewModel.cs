@@ -124,7 +124,7 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
             OnPropertyChanged(nameof(CanRemoveBox));
             OnPropertyChanged(nameof(CanExport));
             OnPropertyChanged(nameof(CanBootstrap));
-        OnPropertyChanged(nameof(TrainingEligibility));
+            OnPropertyChanged(nameof(TrainingEligibility));
             OnPropertyChanged(nameof(CanPredictTrained));
             OnPropertyChanged(nameof(CanAddImages));
             OnPropertyChanged(nameof(CanStopOperation));
