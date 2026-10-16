@@ -70,8 +70,8 @@ public static class DetectionSeedDialogs
 
     public static string? SelectDetector()
     {
-        var dialog = new OpenFileDialog { Title = "选择已训练的 HALCON 目标检测模型",
-            Filter = "HALCON 模型|*.hdl", CheckFileExists = true };
+        var dialog = new OpenFileDialog { Title = "选择已有 YOLO .pt 或 HALCON .hdl 检测模型",
+            Filter = "目标检测模型|*.pt;*.hdl|YOLO 模型|*.pt|HALCON 模型|*.hdl", CheckFileExists = true };
         return dialog.ShowDialog() == true ? dialog.FileName : null;
     }
 }
