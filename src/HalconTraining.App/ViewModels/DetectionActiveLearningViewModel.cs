@@ -2,6 +2,9 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Globalization;
+using System.Text.Json;
+using HalconTraining.Application.Workspace;
 using System.Windows;
 using Microsoft.Win32;
 using HalconTraining.App.Services;
@@ -39,6 +42,13 @@ public sealed class DetectionReviewRow(DetectionReviewImage image)
 public sealed class DetectionActiveLearningViewModel : ObservableModel
 {
     private readonly DetectionActiveLearningStore _store;
+    private readonly string _workspaceRoot;
+    private readonly IHalconProcessRunner _runner;
+    private readonly Func<bool> _trainingBusy;
+    private CancellationTokenSource? _operation;
+    private string? _trainedModel;
+    private int _bootstrapEpochs = 5, _bootstrapBatch = 1, _bootstrapSize = 512;
+    private double _bootstrapRate = .0001;
     private DetectionReviewSession? _session;
     private DetectionReviewRow? _selectedRow;
     private DetectionBoxEditor? _selectedBox;
@@ -47,10 +57,18 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
     private string _lastExport = "";
     private IReadOnlyList<DetectionBox> _previewBoxes = [];
 
-    public DetectionActiveLearningViewModel(string workspaceRoot)
+    public DetectionActiveLearningViewModel(string workspaceRoot, IHalconProcessRunner runner, Func<bool> trainingBusy)
     {
+        _workspaceRoot = workspaceRoot;
         _store = new DetectionActiveLearningStore(workspaceRoot);
+        _runner = runner;
+        _trainingBusy = trainingBusy;
         ImportCommand = new AsyncCommand(_ => ExecuteAsync(ImportAsync));
+        SeedCommand = new AsyncCommand(_ => ExecuteAsync(CreateSeedAsync));
+        BootstrapCommand = new AsyncCommand(_ => ExecuteAsync(BootstrapAsync));
+        PredictExistingCommand = new AsyncCommand(_ => ExecuteAsync(PredictExistingAsync));
+        PredictTrainedCommand = new AsyncCommand(_ => ExecuteAsync(PredictTrainedAsync));
+        StopOperationCommand = new RelayCommand(_ => _operation?.Cancel());
         ApproveCommand = new AsyncCommand(_ => ExecuteAsync(() => SaveReviewAsync("approved")));
         ReworkCommand = new AsyncCommand(_ => ExecuteAsync(() => SaveReviewAsync("rework")));
         SaveDraftCommand = new AsyncCommand(_ => ExecuteAsync(() => SaveReviewAsync("pending")));
@@ -66,6 +84,11 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
     }
 
     public AsyncCommand ImportCommand { get; }
+    public AsyncCommand SeedCommand { get; }
+    public AsyncCommand BootstrapCommand { get; }
+    public AsyncCommand PredictExistingCommand { get; }
+    public AsyncCommand PredictTrainedCommand { get; }
+    public RelayCommand StopOperationCommand { get; }
     public AsyncCommand ApproveCommand { get; }
     public AsyncCommand ReworkCommand { get; }
     public AsyncCommand SaveDraftCommand { get; }
@@ -93,10 +116,24 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
             OnPropertyChanged(nameof(CanReview));
             OnPropertyChanged(nameof(CanRemoveBox));
             OnPropertyChanged(nameof(CanExport));
+            OnPropertyChanged(nameof(CanBootstrap));
+            OnPropertyChanged(nameof(CanPredictTrained));
+            OnPropertyChanged(nameof(CanStopOperation));
         }
     }
     public bool IsIdle => !IsBusy;
     public bool CanReview => !IsBusy && SelectedRow is not null;
+    public bool CanBootstrap => !IsBusy && _session is not null &&
+        _session.Images.Count(image => image.Status == "approved") >= 3 &&
+        _session.Classes.All(category => _session.Images.Where(image => image.Status == "approved")
+            .SelectMany(image => image.ReviewedBoxes).Any(box => box.ClassId == category.Id));
+    public bool CanPredictTrained => !IsBusy && _trainedModel is not null && File.Exists(_trainedModel);
+    public bool CanStopOperation => _operation is not null;
+    public string TrainedModel => _trainedModel is null ? "尚无初始检测模型" : Path.GetFileName(Path.GetDirectoryName(_trainedModel));
+    public int BootstrapEpochs { get => _bootstrapEpochs; set => SetProperty(ref _bootstrapEpochs, value); }
+    public int BootstrapBatch { get => _bootstrapBatch; set => SetProperty(ref _bootstrapBatch, value); }
+    public int BootstrapSize { get => _bootstrapSize; set => SetProperty(ref _bootstrapSize, value); }
+    public double BootstrapRate { get => _bootstrapRate; set => SetProperty(ref _bootstrapRate, value); }
     public bool CanRemoveBox => CanReview && SelectedBox is not null;
     public bool CanExport => !IsBusy && _session?.Images.Any(image => image.Status == "approved") == true;
     public bool CanOpenExport => Directory.Exists(LastExport);
@@ -145,6 +182,9 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
         try
         {
             _session = await _store.LoadLatestAsync();
+            _trainedModel = _session?.LastTrainedModelPath;
+            OnPropertyChanged(nameof(TrainedModel));
+            OnPropertyChanged(nameof(CanPredictTrained));
             if (_session is not null)
             {
                 RefreshQueue();
@@ -162,6 +202,171 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
         try { await action(); }
         catch (Exception error) { Status = "操作失败：" + error.Message; }
         finally { IsBusy = false; }
+    }
+
+
+    private async Task CreateSeedAsync()
+    {
+        if (_trainingBusy()) throw new InvalidOperationException("请先结束正在进行的训练或测试。");
+        var images = DetectionSeedDialogs.SelectImages("选择少量图片，开始目标检测手工标注（支持多选）");
+        if (images.Count == 0) return;
+        var classes = DetectionSeedDialogs.EnterClasses();
+        if (classes is null) return;
+        _session = await _store.CreateSeedAsync(images, classes);
+        _trainedModel = null;
+        LastExport = "";
+        OnPropertyChanged(nameof(TrainedModel));
+        OnPropertyChanged(nameof(CanPredictTrained));
+        RefreshQueue();
+        Status = $"已创建初始标注：{images.Count}张图片。请在图片上拖框、选类别并逐张接受；至少确认3张才能快速训练。";
+    }
+
+    private async Task BootstrapAsync()
+    {
+        if (!CanBootstrap) throw new InvalidOperationException("请先人工确认至少3张图片，并覆盖全部类别。");
+        if (_trainingBusy()) throw new InvalidOperationException("请先结束主训练任务。");
+        if (BootstrapEpochs < 1 || BootstrapBatch < 1 || BootstrapSize < 64 ||
+            BootstrapSize % 32 != 0 || !double.IsFinite(BootstrapRate) || BootstrapRate <= 0)
+            throw new InvalidOperationException("训练参数无效：尺寸≥64且为32的倍数，Batch/Epoch/学习率需大于0。");
+        var backbone = Path.Combine(_workspaceRoot, "assets", "pretrained", "pretrained_dl_classifier_compact.hdl");
+        if (!File.Exists(backbone))
+            throw new FileNotFoundException("找不到 compact 检测基础网络骨干模型，请从有授权的 HALCON 安装目录复制。", backbone);
+        var snapshot = await _store.ExportApprovedCocoAsync(_session!);
+        var output = Path.Combine(_workspaceRoot, "models", "detection", _session!.Id,
+            "run_" + DateTimeOffset.Now.ToString("yyyyMMdd_HHmmss") + "_" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(output);
+        using var cts = new CancellationTokenSource();
+        _operation = cts;
+        OnPropertyChanged(nameof(CanStopOperation));
+        try
+        {
+            Status = "开始小样本检测训练 · 模型仅用于自动预标注，尚未精度验收。";
+            var progress = new Progress<string>(line =>
+            {
+                try
+                {
+                    using var json = JsonDocument.Parse(line);
+                    var item = json.RootElement;
+                    var stage = item.TryGetProperty("stage", out var value) ? value.GetString() : null;
+                    if (stage is "训练" or "轮次完成")
+                    {
+                        var detail = item.GetProperty("detail");
+                        Status = $"检测训练 · {detail.GetProperty("epoch").GetInt32()}/{BootstrapEpochs} Epoch · {stage}";
+                    }
+                }
+                catch (JsonException) { /* Worker also returns final JSON lines. */ }
+            });
+            var result = await _runner.RunAsync(
+                ["--detection-bootstrap", Path.Combine(snapshot, "annotations.json"),
+                 "--backbone-file", backbone, "--output-dir", output,
+                 "--epochs", BootstrapEpochs.ToString(CultureInfo.InvariantCulture),
+                 "--batch", BootstrapBatch.ToString(CultureInfo.InvariantCulture),
+                 "--width", BootstrapSize.ToString(CultureInfo.InvariantCulture),
+                 "--height", BootstrapSize.ToString(CultureInfo.InvariantCulture),
+                 "--rate", BootstrapRate.ToString(CultureInfo.InvariantCulture)],
+                progress, cts.Token);
+            if (result.ExitCode != 0) throw new InvalidOperationException(result.Error);
+            _trainedModel = Path.Combine(output, "model.hdl");
+            if (!File.Exists(_trainedModel)) throw new FileNotFoundException("训练进程未产生模型文件。", _trainedModel);
+            _session.LastTrainedModelPath = _trainedModel;
+            await _store.SaveAsync(_session);
+            OnPropertyChanged(nameof(TrainedModel));
+            OnPropertyChanged(nameof(CanPredictTrained));
+            Status = "小样本模型训练完成（未精度验收）。可点击「使用刚训练的模型预测」继续标注。";
+        }
+        catch (OperationCanceledException)
+        {
+            await File.WriteAllTextAsync(Path.Combine(output, "job.json"),
+                JsonSerializer.Serialize(new { status = "interrupted", message = "人工停止训练，模型未发布。" }));
+            Status = "初始训练已停止，未产生可用的新模型。";
+        }
+        catch
+        {
+            await File.WriteAllTextAsync(Path.Combine(output, "job.json"),
+                JsonSerializer.Serialize(new { status = "failed" }));
+            throw;
+        }
+        finally
+        {
+            _operation = null;
+            OnPropertyChanged(nameof(CanStopOperation));
+        }
+    }
+
+    private async Task PredictExistingAsync()
+    {
+        if (_trainingBusy()) throw new InvalidOperationException("请先结束当前主训练任务。");
+        var model = DetectionSeedDialogs.SelectDetector();
+        if (model is not null) await PredictAsync(model);
+    }
+
+    private async Task PredictTrainedAsync()
+    {
+        if (_trainedModel is null || !File.Exists(_trainedModel))
+            throw new InvalidOperationException("请先完成初始训练或选择已有检测模型。");
+        if (_trainingBusy()) throw new InvalidOperationException("请先结束当前主训练任务。");
+        await PredictAsync(_trainedModel);
+    }
+
+    private async Task PredictAsync(string modelFile)
+    {
+        var images = DetectionSeedDialogs.SelectImages("选择未标注图片进行 HALCON 批量预测");
+        if (images.Count == 0) return;
+        var folder = Path.Combine(_workspaceRoot, "active-learning", "predictions",
+            DateTimeOffset.UtcNow.ToString("yyyyMMdd_HHmmss") + "_" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(folder);
+        var list = Path.Combine(folder, "images.json");
+        var resultPath = Path.Combine(folder, "predictions.json");
+        await File.WriteAllTextAsync(list, JsonSerializer.Serialize(images.Select(image => image.Path).ToArray()));
+        var previous = _session;
+        using var cts = new CancellationTokenSource();
+        _operation = cts;
+        OnPropertyChanged(nameof(CanStopOperation));
+        try
+        {
+            Status = $"正在预测 {images.Count} 张图片；保留低置信度预测供人工复核。";
+            var progress = new Progress<string>(line =>
+            {
+                try
+                {
+                    using var report = JsonDocument.Parse(line);
+                    var info = report.RootElement;
+                    if (info.TryGetProperty("stage", out var stage) && stage.GetString() == "预测")
+                        Status = $"正在预测 {info.GetProperty("processed").GetInt32()} / {images.Count}";
+                }
+                catch (JsonException) { }
+            });
+            var result = await _runner.RunAsync(
+                ["--detection-predict", modelFile, "--image-list", list, "--output-json", resultPath],
+                progress, cts.Token);
+            if (result.ExitCode != 0) throw new InvalidOperationException(result.Error);
+            var next = await _store.ImportAsync(resultPath);
+            // Preserve verified labels only when class IDs and names are exactly the same.
+            var compatible = previous is not null && previous.Classes.Count == next.Classes.Count &&
+                previous.Classes.All(category => next.Classes.Any(other =>
+                    other.Id == category.Id && other.Name == category.Name));
+            if (compatible)
+            {
+                var existing = next.Images.ToDictionary(i => i.ImagePath, StringComparer.OrdinalIgnoreCase);
+                foreach (var accepted in previous!.Images.Where(i => i.Status == "approved"))
+                {
+                    if (existing.ContainsKey(accepted.ImagePath))
+                        next.Images.Remove(existing[accepted.ImagePath]);
+                    next.Images.Add(accepted);
+                }
+            }
+            next.LastTrainedModelPath = _trainedModel;
+            await _store.SaveAsync(next);
+            _session = next;
+            RefreshQueue();
+            var errorFile = Path.ChangeExtension(resultPath, ".errors.json");
+            var failed = File.Exists(errorFile)
+                ? JsonDocument.Parse(await File.ReadAllTextAsync(errorFile)).RootElement.GetArrayLength() : 0;
+            Status = $"预测完成：{images.Count - failed} 张成功、{failed} 张失败。已加入审核队列。" +
+                (compatible ? " 原有已确认标注已保留。" : previous is null ? "" : " 类别定义不同，未合并旧标注。");
+        }
+        catch (OperationCanceledException) { Status = "批量预测已停止，未覆盖原审核数据。"; }
+        finally { _operation = null; OnPropertyChanged(nameof(CanStopOperation)); }
     }
 
     private async Task ImportAsync()
@@ -195,6 +400,7 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
         OnPropertyChanged(nameof(ClassesInfo));
         OnPropertyChanged(nameof(HasSession));
         OnPropertyChanged(nameof(CanExport));
+        OnPropertyChanged(nameof(CanBootstrap));
     }
 
     private void UpdatePreview() => PreviewBoxes = Boxes.Select(box => box.ToBox()).ToArray();
@@ -236,6 +442,7 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
         image.HasDraft = true;
         image.Status = newStatus;
         await _store.SaveAsync(_session);
+        OnPropertyChanged(nameof(CanBootstrap));
         RefreshQueue(newStatus == "pending" ? image.ImagePath : null);
         if (newStatus != "pending") SelectedRow = Items.FirstOrDefault(row => row.Image.Status == "pending") ?? SelectedRow;
         Status = newStatus switch
