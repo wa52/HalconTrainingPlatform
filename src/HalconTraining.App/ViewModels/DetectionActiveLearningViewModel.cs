@@ -68,6 +68,7 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
         _trainingBusy = trainingBusy;
         ImportCommand = new AsyncCommand(_ => ExecuteAsync(ImportAsync));
         SeedCommand = new AsyncCommand(_ => ExecuteAsync(CreateSeedAsync));
+        AddImagesCommand = new AsyncCommand(_ => ExecuteAsync(AddImagesAsync));
         BootstrapCommand = new AsyncCommand(_ => ExecuteAsync(BootstrapAsync));
         PredictExistingCommand = new AsyncCommand(_ => ExecuteAsync(PredictExistingAsync));
         PredictTrainedCommand = new AsyncCommand(_ => ExecuteAsync(PredictTrainedAsync));
@@ -89,6 +90,7 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
 
     public AsyncCommand ImportCommand { get; }
     public AsyncCommand SeedCommand { get; }
+    public AsyncCommand AddImagesCommand { get; }
     public AsyncCommand BootstrapCommand { get; }
     public AsyncCommand PredictExistingCommand { get; }
     public AsyncCommand PredictTrainedCommand { get; }
@@ -123,11 +125,13 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
             OnPropertyChanged(nameof(CanExport));
             OnPropertyChanged(nameof(CanBootstrap));
             OnPropertyChanged(nameof(CanPredictTrained));
+            OnPropertyChanged(nameof(CanAddImages));
             OnPropertyChanged(nameof(CanStopOperation));
         }
     }
     public bool IsIdle => !IsBusy;
     public bool CanReview => !IsBusy && SelectedRow is not null;
+    public bool CanAddImages => !IsBusy && _session is not null;
     public bool CanBootstrap => !IsBusy && _session is not null &&
         _session.Images.Count(image => image.Status == "approved") >= 5 &&
         _session.Classes.All(category => _session.Images.Where(image => image.Status == "approved")
@@ -237,6 +241,16 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
         OnPropertyChanged(nameof(CanPredictTrained));
         RefreshQueue();
         Status = $"已创建初始标注：{images.Count} 张。标多少由你决定；人工确认至少 5 张且每类有目标框，即可微调预训练模型。";
+    }
+
+    private async Task AddImagesAsync()
+    {
+        if (_session is null) throw new InvalidOperationException("请先创建初始标注会话。");
+        var images = DetectionSeedDialogs.SelectImages("继续选择原图，保留已有人工确认的检测框");
+        if (images.Count == 0) return;
+        var added = await _store.AppendSeedImagesAsync(_session, images);
+        RefreshQueue();
+        Status = $"新增 {added} 张原图；重复图片已跳过，之前的审核与标注不会被清除。";
     }
 
     private async Task BootstrapAsync()
@@ -433,6 +447,7 @@ public sealed class DetectionActiveLearningViewModel : ObservableModel
         OnPropertyChanged(nameof(ModelInfo));
         OnPropertyChanged(nameof(ClassesInfo));
         OnPropertyChanged(nameof(HasSession));
+        OnPropertyChanged(nameof(CanAddImages));
         OnPropertyChanged(nameof(CanExport));
         OnPropertyChanged(nameof(CanBootstrap));
     }
