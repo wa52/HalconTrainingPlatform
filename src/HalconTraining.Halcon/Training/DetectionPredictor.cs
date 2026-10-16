@@ -73,7 +73,7 @@ public static class DetectionPredictor
                     call.SetInputCtrlParamTuple("ClassIDsBackground", new HTuple());
                     call.SetInputCtrlParamTuple("GenParam", new HTuple());
                     call.Execute();
-                    preprocess = call.GetOutputCtrlParamTuple("DLPreprocessParam").TupleClone();
+                    preprocess = call.GetOutputCtrlParamTuple("DLPreprocessParam");
                 }
                 using (preprocess)
                 {
