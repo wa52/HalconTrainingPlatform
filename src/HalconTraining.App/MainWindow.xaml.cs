@@ -13,7 +13,7 @@ public partial class MainWindow : Window
         Closing+=async(_,e)=>
         {
             if(_closing)return;
-            if(!viewModel.IsBusy)return;
+            if(!viewModel.HasActiveOperations)return;
             e.Cancel=true;_closing=true;
             await viewModel.StopAndWaitAsync();Close();
         };
