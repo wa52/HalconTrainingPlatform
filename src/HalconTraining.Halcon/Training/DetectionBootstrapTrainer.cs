@@ -58,8 +58,8 @@ public static class DetectionBootstrapTrainer
             return new Sample(Path.Combine(imagesDirectory, filename), imageWidth, imageHeight, boxes);
         }).ToArray();
 
-        if (samples.Length < 3 || samples.Length < batchSize)
-            throw new InvalidDataException("初始训练至少需要3张已人工确认的图片，且Batch不能大于图片数。");
+        if (samples.Length < 5 || samples.Length < batchSize)
+            throw new InvalidDataException("初始训练至少需要5张已人工确认的图片，且Batch不能大于图片数。");
         if (samples.SelectMany(s => s.Boxes).Any() == false)
             throw new InvalidDataException("没有目标框；已审核无目标图片可参与训练，但必须同时有正样本。");
         var missing = classPairs.Where(c => !samples.SelectMany(s => s.Boxes).Any(b => b.ClassId == c.Id))
