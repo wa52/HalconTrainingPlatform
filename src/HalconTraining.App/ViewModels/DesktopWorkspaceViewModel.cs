@@ -45,6 +45,14 @@ public sealed class DesktopWorkspaceViewModel : ObservableModel, IDisposable
     {
         _workspace=workspace;_dialogs=dialogs;_environment=environment;
         ActiveLearning=new DetectionActiveLearningViewModel(workspace.Store.Root, new HalconProcessRunner(), () => IsBusy);
+        ActiveLearning.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(DetectionActiveLearningViewModel.IsBusy))
+            {
+                OnPropertyChanged(nameof(CanTrain));
+                OnPropertyChanged(nameof(CanTest));
+            }
+        };
         BrowseDatasetCommand=new(async token=>{var file=_dialogs.Dataset();if(file is not null)await SelectDatasetAsync(file,token);});
         RepartitionCommand=new(token=>SelectDatasetAsync(DatasetPath,token));
         StartTrainingCommand=new(_=>TrainAsync());
@@ -92,8 +100,8 @@ public sealed class DesktopWorkspaceViewModel : ObservableModel, IDisposable
     public bool IsBusy {get=>_busy;private set{if(SetProperty(ref _busy,value)){OnPropertyChanged(nameof(IsIdle));OnPropertyChanged(nameof(CanTrain));OnPropertyChanged(nameof(CanTest));OnPropertyChanged(nameof(CanSaveOverlay));}}}
     public bool IsIdle=>!IsBusy;
     public bool HasActiveOperations => IsBusy || ActiveLearning.IsBusy;
-    public bool CanTrain=>!IsBusy&&(_report?.Task is "semantic" or "classification")&&File.Exists(ModelPath)&&!_report.Issues.Any(issue=>issue.StartsWith("原图不存在：",StringComparison.Ordinal))&&_report.Samples.All(s=>!s.Missing)&&_report.SplitCounts.Values.All(n=>n>0);
-    public bool CanTest=>!IsBusy&&SelectedModel?.CanTest==true;
+    public bool CanTrain=>!IsBusy&&!ActiveLearning.IsBusy&&(_report?.Task is "semantic" or "classification")&&File.Exists(ModelPath)&&!_report.Issues.Any(issue=>issue.StartsWith("原图不存在：",StringComparison.Ordinal))&&_report.Samples.All(s=>!s.Missing)&&_report.SplitCounts.Values.All(n=>n>0);
+    public bool CanTest=>!IsBusy&&!ActiveLearning.IsBusy&&SelectedModel?.CanTest==true;
     public string Status {get=>_status;private set=>SetProperty(ref _status,value);}
     public string DatasetPath {get=>_dataset;private set{if(SetProperty(ref _dataset,value))OnPropertyChanged(nameof(TaskName));}}
     public string TaskName=>string.IsNullOrWhiteSpace(DatasetPath)?"未选择数据集":Path.GetFileNameWithoutExtension(DatasetPath);
