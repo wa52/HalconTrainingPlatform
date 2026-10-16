@@ -41,6 +41,18 @@ try
     var queue = DetectionActiveLearningStore.Pending(session);
     Require(Path.GetFileName(queue[0].ImagePath) == "c.png", "Margin uncertainty ranking");
     Require(queue.Any(image => image.PredictedBoxes.Count == 0), "Zero-detection image must be reviewed");
+    var diversity = new DetectionReviewSession
+    {
+        Images =
+        [
+            new DetectionReviewImage { ImagePath = "g1-first", GroupId = "g1", Priority = .99 },
+            new DetectionReviewImage { ImagePath = "g1-second", GroupId = "g1", Priority = .98 },
+            new DetectionReviewImage { ImagePath = "g2-first", GroupId = "g2", Priority = .50 }
+        ]
+    };
+    var diverseQueue = DetectionActiveLearningStore.Pending(diversity);
+    Require(diverseQueue[0].ImagePath == "g1-first" && diverseQueue[1].ImagePath == "g2-first",
+        "Group-aware sampling avoids consecutive same-batch reviews");
     var approved = session.Images.First(image => Path.GetFileName(image.ImagePath) == "a.png");
     approved.ReviewedBoxes = [new DetectionBox(2, .97, 15, 10, 40, 50)];
     approved.HasDraft = true;
