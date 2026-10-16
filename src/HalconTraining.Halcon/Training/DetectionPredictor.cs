@@ -57,24 +57,9 @@ public static class DetectionPredictor
                     "procedures", "dl"));
                 using var procedure = new HDevProcedure("preprocess_dl_samples");
                 var preprocessPath = Path.Combine(Path.GetDirectoryName(modelFile)!, "preprocess.hdict");
-                HTuple preprocess;
-                if (File.Exists(preprocessPath))
-                {
-                    HOperatorSet.ReadDict(preprocessPath, new HTuple(), new HTuple(), out preprocess);
-                }
-                else
-                {
-                    using var creator = new HDevProcedure("create_dl_preprocess_param_from_model");
-                    using var call = new HDevProcedureCall(creator);
-                    call.SetInputCtrlParamTuple("DLModelHandle", model);
-                    call.SetInputCtrlParamTuple("NormalizationType", new HTuple("none"));
-                    call.SetInputCtrlParamTuple("DomainHandling", new HTuple("full_domain"));
-                    call.SetInputCtrlParamTuple("SetBackgroundID", new HTuple());
-                    call.SetInputCtrlParamTuple("ClassIDsBackground", new HTuple());
-                    call.SetInputCtrlParamTuple("GenParam", new HTuple());
-                    call.Execute();
-                    preprocess = call.GetOutputCtrlParamTuple("DLPreprocessParam");
-                }
+                if (!File.Exists(preprocessPath))
+                    throw new FileNotFoundException("已有检测模型必须提供与训练一致的 preprocess.hdict，请将其放在 .hdl 同目录。", preprocessPath);
+                HOperatorSet.ReadDict(preprocessPath, new HTuple(), new HTuple(), out var preprocess);
                 using (preprocess)
                 {
                     HOperatorSet.GetDictTuple(preprocess, "domain_handling", out var handling);
