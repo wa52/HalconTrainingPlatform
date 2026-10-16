@@ -17,6 +17,7 @@
     <ProjectReference Include="..\HalconTraining.Persistence\HalconTraining.Persistence.csproj" />
     <ProjectReference Include="..\HalconTraining.Worker\HalconTraining.Worker.csproj" ReferenceOutputAssembly="false" />
     <PackageReference Include="MVTec.HalconDotNet-Windows" Version="24111.0.0" />
+    <Content Include="..\\..\\tools\\yolo_active_learning.py" Link="worker\\yolo_active_learning.py" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <Target Name="CopyTrainingWorker" AfterTargets="Build">
     <ItemGroup>
