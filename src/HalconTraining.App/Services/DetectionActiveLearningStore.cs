@@ -113,6 +113,40 @@ public sealed class DetectionActiveLearningStore(string workspaceRoot)
         foreach (var box in boxes) ValidateBox(box, image.Width, image.Height, ids);
     }
 
+    /// <summary>Start a manual seed round; no predictions are required.</summary>
+    public async Task<DetectionReviewSession> CreateSeedAsync(
+        IReadOnlyList<(string Path, int Width, int Height)> images, IReadOnlyList<string> classNames)
+    {
+        if (images.Count == 0) throw new InvalidDataException("请先选择至少一张原图。");
+        if (classNames.Count == 0 || classNames.Any(string.IsNullOrWhiteSpace) ||
+            classNames.Distinct(StringComparer.OrdinalIgnoreCase).Count() != classNames.Count)
+            throw new InvalidDataException("需要提供不重复的目标类别名称。");
+        if (classNames.Any(name => name.Contains('/') || name.Contains('\\')))
+            throw new InvalidDataException("类别名称不能包含路径分隔符。");
+        var session = new DetectionReviewSession
+        {
+            Id = DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmss") + "_" + Guid.NewGuid().ToString("N")[..8],
+            ModelId = "manual-seed", SourcePredictionFile = "", CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Classes = classNames.Select((name, index) => new DetectionCategory(index + 1, name.Trim())).ToList()
+        };
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in images)
+        {
+            var full = Path.GetFullPath(item.Path);
+            if (!File.Exists(full)) throw new FileNotFoundException("原始图片不存在。", full);
+            if (item.Width <= 0 || item.Height <= 0 || !paths.Add(full))
+                throw new InvalidDataException("图片尺寸无效或包含重复图片：" + full);
+            session.Images.Add(new DetectionReviewImage
+            {
+                ImagePath = full, Width = item.Width, Height = item.Height,
+                Priority = 1, Reason = "手工初始标注 · 尚无预测", Status = "pending"
+            });
+        }
+        await SaveAsync(session);
+        return session;
+    }
+
     public async Task<DetectionReviewSession> ImportAsync(string filename)
     {
         var full = Path.GetFullPath(filename);
