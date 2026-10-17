@@ -1,3 +1,5 @@
+> 本文保留早期设计记录。当前 UI 的最高准则与三页布局以 [UI_SIMPLICITY.md](UI_SIMPLICITY.md) 为准，正式界面为 WPF。
+
 # HALCON 训练平台 UI 设计 v1
 
 界面稿：`UI_DESIGN.html`。面向使用 HALCON 24.11 的视觉工程师，默认从已标注的 HALCON `.hdict` 数据集进入训练流程。页面中的扬声器为 SVG 示意图，统计、曲线与实验均为样例，不代表实际训练结果。正式桌面程序仍采用 WPF，不依赖浏览器；HTML 用于先评审布局和交互。

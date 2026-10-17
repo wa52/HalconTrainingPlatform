@@ -17,6 +17,8 @@ public static class DatasetInspector
                 using var samples = Value(dataset, "samples");
                 using var classes = Value(dataset, "class_names");
                 using var imageDir = Value(dataset, "image_dir");
+                using var maskDir = Value(dataset, "segmentation_dir");
+                using var classIds = Value(dataset, "class_ids");
                 var tasks = new HashSet<string>();
                 var rows = new List<object>();
                 var issues = new List<string>();
@@ -61,7 +63,19 @@ public static class DatasetInspector
                     if (segmentation.Length > 0) maskCount++;
                     var split=assignment[i];
                     splitCounts[split]++;
-                    if (rows.Count < 100) rows.Add(new { name = filename, path, missing, split });
+                    string? maskPath=null, label=null;
+                    if(segmentation.Length>0)
+                    {
+                        maskPath=Path.GetFullPath(Path.Combine(Path.GetDirectoryName(file)!,maskDir.Length>0?maskDir.S:"",segmentation.S));
+                        if(!File.Exists(maskPath))issues.Add($"标注不存在：{maskPath}");
+                    }
+                    using var imageLabel=Value(sample,"image_label_id");
+                    if(imageLabel.Length==1)
+                    {
+                        var index=Array.IndexOf(classIds.ToIArr(),imageLabel.I);
+                        label=index>=0&&index<classes.Length?classes[index].S:$"未知类别 {imageLabel.I}";
+                    }
+                    rows.Add(new { name = filename, path, missing, split, maskPath, label });
                 }
                 var task = tasks.Count == 1 ? tasks.Single() : "unknown";
                 if (!hasGroupMetadata) issues.Add("无工件/批次元信息，预览按图像划分；正式训练前请核对相似样本是否跨集合。");

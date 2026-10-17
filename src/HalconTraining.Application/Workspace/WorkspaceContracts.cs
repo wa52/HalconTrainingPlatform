@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace HalconTraining.Application.Workspace;
 
-public sealed record DatasetSample(string Name, string Path, bool Missing, string Split);
+public sealed record DatasetSample(string Name, string Path, bool Missing, string Split, string? MaskPath = null, string? Label = null);
 public sealed record DatasetReport(string Task, int ImageCount, int ClassCount, int MaskCount, int AnnotationCount,
     Dictionary<string, int> SplitCounts, string[] Classes, DatasetSample[] Samples, string[] Issues);
 public sealed record TrainingSettings(string Dataset, string ModelFile, int Epochs = 60, int Batch = 2, int Width = 512,

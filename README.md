@@ -4,9 +4,9 @@
 
 ## 当前功能
 
-- 四页工作台：项目总览、数据集、训练、模型管理；低频参数折叠。
+- 三页工作台：数据集、训练、模型；任务与环境集中在顶部，低频参数、日志和详细指标默认折叠。
 - 直接浏览原始 `.hdict/.json`，任务名使用数据集文件名；任务识别、固定种子和工件/批次分组划分；源文件不改写。
-- 根据任务匹配项目 `assets/pretrained` 中的模型副本。常用参数：图像尺寸、Batch、轮数、学习率；高级项：种子和划分比例。
+- 根据任务匹配项目 `assets/pretrained` 中的模型副本。常显可编辑参数：图像尺寸、Batch、轮数、学习率；比例、集合数量和基础模型紧凑展示；高级项：种子、划分比例调整和验证间隔。训练开始后自动收起参数、扩大监控区域；完成后可直接查看模型并测试。
 - 图像分类与语义分割真实训练、实际Loss/日志、独立评估、停止Worker、原子状态文件与中断识别。停止保留产物，不支持断点续训。
 - 模型固定保存到 `models/<任务类别>/<数据集名>/<运行编号>`；包含模型、预处理、类别、参数、划分、评估、日志和SHA-256。只有独立评估完成的分类或语义分割模型可测试。
 - 原图批量测试与坏图隔离，`HSmartWindowControlWPF`原生彩色显示、青色预测叠加、透明度调节和原尺寸PNG保存。测试结果保存在 `results/tests`，重启后按模型恢复历史。
@@ -40,7 +40,9 @@ dotnet build .\HalconTrainingPlatform.sln -c Release
 
 WPF程序支持显式开发验证参数 `--validate-desktop --validation-output <证据目录> --dataset <字典> --image <原图1> --image <原图2>`，只有指定此参数才执行一轮真实训练、评估、批量预测、原生显示、停止和重载检查。建议通过进程级HALCON_TRAINING_HOME设置独立验证工作区，复制所需基础模型和已验证模型到其中，避免将验证作业放入正式模型库。
 
-证据在 `artifacts/wpf-validation`（真实数据/模型/截图不提交）。网页时期的HTML与Node脚本仅保留为历史设计和验证资料，不属于桌面运行依赖。
+三页交互与真实分类/分割回归证据在 `artifacts/ui-simplicity`，早期证据在 `artifacts/wpf-validation`（真实数据/模型/截图不提交）。网页时期的HTML与Node脚本仅保留为历史设计和验证资料，不属于桌面运行依赖。
 
 设计与流程见[WPF_IMPLEMENTATION.md](docs/WPF_IMPLEMENTATION.md)。训练产物和真实图像均不随源代码提交。
 分类流程和数据生命周期见 [docs/CLASSIFICATION.md](docs/CLASSIFICATION.md)。
+
+UI 的最高标准为“简洁、有效、清晰，以操作效率为第一目标”，具体准则见 [UI_SIMPLICITY.md](docs/UI_SIMPLICITY.md)。

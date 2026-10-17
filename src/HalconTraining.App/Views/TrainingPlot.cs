@@ -17,7 +17,7 @@ public sealed class TrainingPlot : FrameworkElement
         const double left=56,top=14,bottom=33;var width=Math.Max(1,ActualWidth-left-14);var height=Math.Max(1,ActualHeight-top-bottom);
         var maximum=IsPercentage?1:data.Length>0?Math.Max(.0001,data.Max(p=>p.Value)*1.1):1;
         var epochMaximum=data.Length>0?Math.Max(1,Math.Ceiling(data.Max(p=>p.Epoch))):1;
-        var muted=new SolidColorBrush(Color.FromRgb(105,123,144));var line=new Pen(new SolidColorBrush(Color.FromRgb(226,233,240)),1);
+        var muted=(Brush)FindResource("MutedBrush");var line=new Pen((Brush)FindResource("LineBrush"),1);
         void Label(string value,double x,double y)=>dc.DrawText(new FormattedText(value,CultureInfo.CurrentUICulture,FlowDirection.LeftToRight,new Typeface("Microsoft YaHei UI"),11,muted,VisualTreeHelper.GetDpi(this).PixelsPerDip),new Point(x,y));
         for(var i=0;i<=4;i++){var y=top+height*i/4;dc.DrawLine(line,new Point(left,y),new Point(left+width,y));var value=maximum*(4-i)/4;Label(IsPercentage?value.ToString("P0"):value.ToString("G3",CultureInfo.InvariantCulture),2,y-7);}
         for(var i=0;i<=4;i++){var x=left+width*i/4;Label((epochMaximum*i/4).ToString("0.##",CultureInfo.InvariantCulture),x-5,top+height+8);}
@@ -27,7 +27,7 @@ public sealed class TrainingPlot : FrameworkElement
         {
             for(var i=0;i<data.Length;i++){var point=new Point(left+width*data[i].Epoch/epochMaximum,top+height-height*data[i].Value/maximum);if(i==0)context.BeginFigure(point,false,false);else context.LineTo(point,true,false);}
         }
-        var color=new SolidColorBrush(IsPercentage?Color.FromRgb(26,143,126):Color.FromRgb(36,100,162));dc.DrawGeometry(null,new Pen(color,2),geometry);
+        var color=(Brush)FindResource("AccentBrush");dc.DrawGeometry(null,new Pen(color,2),geometry);
         foreach(var point in data.Where((_,i)=>IsPercentage||i==data.Length-1))dc.DrawEllipse(color,null,new Point(left+width*point.Epoch/epochMaximum,top+height-height*point.Value/maximum),3,3);
     }
 }

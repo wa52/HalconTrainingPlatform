@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Controls;
 using HalconTraining.App.ViewModels;
 
 namespace HalconTraining.App;
@@ -10,6 +11,12 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = viewModel;
+        var errors=new HashSet<ValidationError>();
+        Validation.AddErrorHandler(this,(_,event_)=>
+        {
+            if(event_.Action==ValidationErrorEventAction.Added)errors.Add(event_.Error);else errors.Remove(event_.Error);
+            viewModel.HasInputErrors=errors.Count>0;
+        });
         Closing+=async(_,e)=>
         {
             if(_closing)return;

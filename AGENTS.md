@@ -35,3 +35,14 @@ dotnet run --project .\src\HalconTraining.App\HalconTraining.App.csproj -c Relea
 ```
 
 Use the project's HALCON 24.11 package `24111.0.0`, .NET 8, and x64. The current machine requires network access to restore NuGet audit metadata; disabling audit for an offline cached-package build is a local workaround, not a completed dependency-security review.
+
+## UI acceptance standard
+
+- Highest priority: 简洁、有效、清晰. Optimize operation efficiency over visual effects; follow `docs/UI_SIMPLICITY.md`.
+- Exactly three primary pages: 数据集、训练、模型. Put the current task and truthful environment status in the top status bar.
+- One primary task per screen and one primary action per area. Center dataset browsing and testing on large native image displays.
+- Before training keep image size, Batch, Epoch and learning rate directly visible and editable; keep split ratios/counts and base model visible. During training lock all parameter editing; restore editors on stop/completion.
+- Before training emphasize parameters; during training automatically collapse parameters and emphasize progress/curves; on completion offer the model/test step.
+- Advanced parameters, logs and detailed metrics start collapsed. Explain blocked operations and invalid input immediately.
+- White/light gray, one blue accent, necessary status colors only. No decorative gradients, shadows, icons or card collections.
+- Validate the first-use flow: select dataset → start training → view result → test original images, including empty/error/running/stopped states.
