@@ -31,6 +31,7 @@ internal static class DesktopValidation
             {
                 Require(window.Pages.Items.Count==3,"必须只有三个主页面");
                 Require(window.Pages.Items.Cast<TabItem>().Select(item=>item.Header?.ToString()).SequenceEqual(new[]{"数据集","训练","模型"}),"主页面命名不符");
+                Require(window.DatasetPages.Items.Count==2,"数据集页应保留浏览和目标检测主动学习入口");
                 Require(!vm.CanTrain&&vm.TrainingReadiness.Contains("选择"),"空状态应说明选择数据集");
                 vm.SelectedPageIndex=DesktopWorkspaceViewModel.TrainingPage;
                 await window.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);
@@ -38,6 +39,14 @@ internal static class DesktopValidation
                 Require(Descendants<Expander>(window).Where(e=>e.Header?.ToString() is "高级参数" or "详细训练指标" or "运行日志").All(e=>!e.IsExpanded),"低频区域应默认折叠");
                 window.Width=1120;window.Height=780;await window.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);Capture(window,Path.Combine(output,"wpf-empty-minimum.png"));
                 window.Width=1380;window.Height=920;vm.SelectedPageIndex=DesktopWorkspaceViewModel.DatasetPage;
+                window.DatasetPages.SelectedIndex=1;
+                await window.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);
+                var detection=Descendants<DetectionActiveLearningView>(window).Single();
+                Require(ReferenceEquals(detection.DataContext,vm.ActiveLearning),"主动学习未连接到独立任务状态");
+                Require(detection.IsVisible,"主动学习入口无法打开");
+                Require(Descendants<Expander>(detection).Where(e=>e.Header?.ToString()?.StartsWith("高级") == true).All(e=>!e.IsExpanded),"主动学习低频操作应默认折叠");
+                Capture(window,Path.Combine(output,"wpf-active-learning.png"));
+                window.DatasetPages.SelectedIndex=0;
             });
             await Step("原路径读取、任务和基础模型自动匹配",async()=>{await vm.SelectDatasetAsync(dataset,CancellationToken.None);Require(vm.CanTrain,vm.Status);Require(vm.TaskLabel is "语义分割" or "图像分类","未识别支持的训练任务");Require(Path.GetFileName(vm.ModelPath)==(vm.IsClassification?"pretrained_dl_classifier_compact.hdl":"pretrained_dl_segmentation_compact.hdl"),"基础模型不匹配");});
             await Step("全部图片、类别标注与下一步入口",async()=>

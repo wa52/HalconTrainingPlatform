@@ -14,6 +14,12 @@
 
 真实训练/测试已验收的任务为**图像分类和语义分割**。分类监控显示验证准确率，原图测试显示预测类别和全类别置信度；独立报告包含混淆矩阵和每类召回率。目标检测、实例分割、OCR和异常任务可读取/识别及匹配基础模型，尚未接通完整训练适配器，界面不冒充可执行。
 
+## 目标检测主动学习（审核/数据准备）
+
+数据集页新增「目标检测 · 主动学习」：**无模型时**标注任意数量图片，**人工确认满5张且每类别有有效检测框**即可使用YOLO26n预训练权重进行探索性微调；训练得到未验收检测模型，可直接对新图片批量预标注。**已有检测模型时**选择YOLO `.pt` 或带有匹配 `preprocess.hdict` 的HALCON `.hdl` 并多选图片，直接批量预测，无需手写 JSON。审核队列按置信度、类别得分差及工件/批次排序，支持修改/添加/删除框、恢复审核会话，只将人工确认标签导出为 COCO。详见 [docs/ACTIVE_LEARNING_DETECTION.md](docs/ACTIVE_LEARNING_DETECTION.md)。
+
+**边界**：已接入YOLO独立Python训练/预测Worker及HALCON检测Worker，**仅提供探索性bootstrap**，未通过 Windows HALCON+GPU 实机验收、独立 mAP 与正式模型质量验收。不能把它视为完整的生产级目标检测训练适配器；原本的分类/语义分割独立验收与模型发布流程仍保持不变。可用 `dotnet run --project tests/HalconTraining.ActiveLearning.Smoke` 运行无 HALCON 的数据层验证。
+
 ## 架构
 
 - Domain：任务和状态、统一数据划分，不依赖WPF/HALCON。

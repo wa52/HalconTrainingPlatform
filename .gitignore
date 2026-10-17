@@ -32,3 +32,10 @@ docs/NH320_TRAINING_RESULT.md
 .env
 .env.*
 !.env.example
+
+# Local active-learning sessions, Python cache and downloaded weights
+/active-learning/
+.venv*/
+__pycache__/
+*.pyc
+*.pt

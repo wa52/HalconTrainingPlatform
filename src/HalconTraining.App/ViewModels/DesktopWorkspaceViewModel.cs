@@ -50,6 +50,14 @@ public sealed class DesktopWorkspaceViewModel : ObservableModel, IDisposable
     public DesktopWorkspaceViewModel(TrainingWorkspace workspace,IWorkspaceDialogs dialogs,ITrainingWorkerClient environment)
     {
         _workspace=workspace;_dialogs=dialogs;_environment=environment;
+        ActiveLearning=new DetectionActiveLearningViewModel(workspace.Store.Root, new HalconProcessRunner(), new YoloProcessRunner(), () => IsBusy);
+        ActiveLearning.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(DetectionActiveLearningViewModel.IsBusy))
+            {
+                NotifyState();
+            }
+        };
         BrowseDatasetCommand=new(async token=>{var file=_dialogs.Dataset();if(file is not null)await SelectDatasetAsync(file,token);});
         RepartitionCommand=new(token=>SelectDatasetAsync(DatasetPath,token));
         StartTrainingCommand=new(_=>TrainAsync());
@@ -102,10 +110,12 @@ public sealed class DesktopWorkspaceViewModel : ObservableModel, IDisposable
     public string? TrainingPreviewMask {get=>_trainingMask;private set=>SetProperty(ref _trainingMask,value);}
     public string? TrainingTruthMask {get=>_trainingTruth;private set=>SetProperty(ref _trainingTruth,value);}
     public int ValidationInterval {get=>_validationInterval;set{SetProperty(ref _validationInterval,value);NotifyState();}}
+    public DetectionActiveLearningViewModel ActiveLearning {get;}
+    public bool HasActiveOperations=>IsBusy||ActiveLearning.IsBusy;
     public string Root=>_workspace.Store.Root;
     public int SelectedPageIndex {get=>_page;set=>SetProperty(ref _page,value);}
     public bool IsBusy {get=>_busy;private set{if(SetProperty(ref _busy,value))NotifyState();}}
-    public bool IsIdle=>!IsBusy;
+    public bool IsIdle=>!HasActiveOperations;
     public bool IsTraining {get=>_isTraining;private set{SetProperty(ref _isTraining,value);AreParametersExpanded=!value;if(value)AreAdvancedParametersExpanded=false;NotifyState();}}
     public bool IsTesting {get=>_isTesting;private set{SetProperty(ref _isTesting,value);NotifyState();}}
     public bool CanStop=>IsTraining||IsTesting;
@@ -123,6 +133,7 @@ public sealed class DesktopWorkspaceViewModel : ObservableModel, IDisposable
             if(IsTraining)return "正在训练；参数已锁定，可随时停止。";
             if(IsTesting)return "正在测试原图，请稍后开始训练。";
             if(IsBusy)return "正在读取和检查数据集…";
+            if(ActiveLearning.IsBusy)return "目标检测任务正在运行，请完成或停止后训练。";
             if(_report is null)return "先选择 HALCON 数据集。";
             if(_report.Task is not ("semantic" or "classification"))return "已识别此任务，训练尚未接通；当前支持图像分类和语义分割。";
             if(_report.Issues.Any(i=>i.StartsWith("原图不存在：",StringComparison.Ordinal)||i.StartsWith("标注不存在：",StringComparison.Ordinal)))return "图片或标注缺失，请在数据检查中查看文件位置。";
@@ -164,12 +175,12 @@ public sealed class DesktopWorkspaceViewModel : ObservableModel, IDisposable
     public bool EnvironmentHealthy {get=>_environmentHealthy;private set=>SetProperty(ref _environmentHealthy,value);}
     public bool EnvironmentAttention {get=>_environmentAttention;private set=>SetProperty(ref _environmentAttention,value);}
     public string ModelEvaluationSummary=>SelectedModel?.Metrics??"先选择一个已训练模型。";
-    public string ModelTestReadiness=>IsTesting?"正在逐张处理原图；可以停止测试。":IsBusy?"当前任务正在运行，请完成后测试。":SelectedModel is null?"先选择模型，再选择原图测试。":SelectedModel.CanTest?"可以测试 · 支持一次选择多张原图。":"此模型尚未完成评估，暂不能测试；请查看状态或重新训练。";
+    public string ModelTestReadiness=>IsTesting?"正在逐张处理原图；可以停止测试。":HasActiveOperations?"当前任务正在运行，请完成后测试。":SelectedModel is null?"先选择模型，再选择原图测试。":SelectedModel.CanTest?"可以测试 · 支持一次选择多张原图。":"此模型尚未完成评估，暂不能测试；请查看状态或重新训练。";
     private void NotifyState()
     {
-        foreach(var name in new[]{nameof(IsIdle),nameof(CanTrain),nameof(CanTest),nameof(CanStop),nameof(CanSaveOverlay),nameof(TrainingReadiness),nameof(TrainingStateText),nameof(ShowTrainingMonitor),nameof(StartTrainingLabel),nameof(HasDataset),nameof(DatasetCaption),nameof(ParameterSummary),nameof(BaseModelName),nameof(Classes),nameof(DataCheckSummary),nameof(HasMasks),nameof(ModelTestReadiness),nameof(HasPendingSplit),nameof(CanRefreshSplit),nameof(SplitRatioSummary),nameof(TrainCountText),nameof(ValidationCountText),nameof(TestCountText),nameof(TaskParameterHeader),nameof(TaskParameterSummary)})OnPropertyChanged(name);
+        foreach(var name in new[]{nameof(HasActiveOperations),nameof(IsIdle),nameof(CanTrain),nameof(CanTest),nameof(CanStop),nameof(CanSaveOverlay),nameof(TrainingReadiness),nameof(TrainingStateText),nameof(ShowTrainingMonitor),nameof(StartTrainingLabel),nameof(HasDataset),nameof(DatasetCaption),nameof(ParameterSummary),nameof(BaseModelName),nameof(Classes),nameof(DataCheckSummary),nameof(HasMasks),nameof(ModelTestReadiness),nameof(HasPendingSplit),nameof(CanRefreshSplit),nameof(SplitRatioSummary),nameof(TrainCountText),nameof(ValidationCountText),nameof(TestCountText),nameof(TaskParameterHeader),nameof(TaskParameterSummary)})OnPropertyChanged(name);
     }
-    public bool CanTest=>!IsBusy&&SelectedModel?.CanTest==true;
+    public bool CanTest=>!HasActiveOperations&&SelectedModel?.CanTest==true;
     public string Status {get=>_status;private set=>SetProperty(ref _status,value);}
     public string DatasetPath {get=>_dataset;private set{if(SetProperty(ref _dataset,value))OnPropertyChanged(nameof(TaskName));}}
     public string TaskName=>string.IsNullOrWhiteSpace(DatasetPath)?"未选择数据集":Path.GetFileNameWithoutExtension(DatasetPath);
@@ -213,6 +224,7 @@ public sealed class DesktopWorkspaceViewModel : ObservableModel, IDisposable
     public string ResultSummary=>SelectedResult is null?"直接选择原图，无需测试字典或人工标注。":SelectedResult.Task=="classification"?$"{SelectedResult.File} · 预测：{SelectedResult.ClassName} · 置信度 {SelectedResult.Confidence:P2} · 推理 {SelectedResult.InferenceMs:F1} ms":$"{SelectedResult.File} · {SelectedResult.Width} × {SelectedResult.Height} · 推理 {SelectedResult.InferenceMs:F1} ms · 前景 {SelectedResult.Areas.Where(a=>a.ClassId!=0).Sum(a=>a.Ratio):P2}";
     public async Task InitializeAsync()
     {
+        await ActiveLearning.InitializeAsync();
         await SafeAsync(async()=>
         {
             var session=await _workspace.Store.LoadSessionAsync();
@@ -379,6 +391,6 @@ public sealed class DesktopWorkspaceViewModel : ObservableModel, IDisposable
     private static void OpenFolder(string? directory){if(directory is not null&&Directory.Exists(directory))Process.Start(new ProcessStartInfo(directory){UseShellExecute=true});}
     private static string Label(string task)=>task switch {"semantic"=>"语义分割","detection"=>"目标检测 · 水平框","rotated"=>"目标检测 · 旋转框","instance"=>"实例分割","classification"=>"图像分类","multi"=>"多标签分类","anomaly"=>"异常检测","ocr"=>"OCR · 需确认组件",_=>"无法识别任务"};
     public void RequestStop()=>_operation?.Cancel();
-    public async Task StopAndWaitAsync(){_lifetime.Cancel();_operation?.Cancel();while(IsBusy)await Task.Delay(50);}
+    public async Task StopAndWaitAsync(){_lifetime.Cancel();_operation?.Cancel();await ActiveLearning.StopAndWaitAsync();while(IsBusy)await Task.Delay(50);}
     public void Dispose(){_clock.Stop();_lifetime.Cancel();_lifetime.Dispose();}
 }

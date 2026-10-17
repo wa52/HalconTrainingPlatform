@@ -1,0 +1,45 @@
+name: Detection Active Learning Smoke
+
+on:
+  push:
+    paths:
+      - 'src/**'
+      - 'HalconTrainingPlatform.sln'
+      - 'tests/HalconTraining.ActiveLearning.Smoke/**'
+      - 'tests/test_yolo_active_learning.py'
+      - 'tools/yolo_active_learning.py'
+      - '.github/workflows/active-learning-smoke.yml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'HalconTrainingPlatform.sln'
+      - 'tests/HalconTraining.ActiveLearning.Smoke/**'
+      - 'tests/test_yolo_active_learning.py'
+      - 'tools/yolo_active_learning.py'
+      - '.github/workflows/active-learning-smoke.yml'
+
+jobs:
+  wpf-build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build native WPF application without runtime execution
+        run: dotnet build HalconTrainingPlatform.sln --configuration Release
+
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate approved COCO to YOLO conversion without GPU
+        run: python -m unittest discover -s tests -p 'test_yolo_active_learning.py' -v
+      - name: Run HALCON-free detection active-learning smoke test
+        run: dotnet run --project tests/HalconTraining.ActiveLearning.Smoke/HalconTraining.ActiveLearning.Smoke.csproj --configuration Release
