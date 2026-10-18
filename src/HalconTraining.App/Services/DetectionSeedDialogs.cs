@@ -9,6 +9,20 @@ namespace HalconTraining.App.Services;
 /// <summary>Minimal native-WPF dialogs; no browser and no external annotation server.</summary>
 public static class DetectionSeedDialogs
 {
+    public static string? SelectFolder()
+    {
+        var dialog = new OpenFolderDialog { Title = "选择图片根目录（每个子文件夹一个类别）", Multiselect = false };
+        return dialog.ShowDialog(System.Windows.Application.Current.MainWindow) == true ? dialog.FolderName : null;
+    }
+
+    public static (int Width, int Height) ReadImageSize(string filename)
+    {
+        using var stream = File.OpenRead(filename);
+        var decoder = BitmapDecoder.Create(stream, BitmapCreateOptions.DelayCreation | BitmapCreateOptions.IgnoreColorProfile,
+            BitmapCacheOption.None);
+        return (decoder.Frames[0].PixelWidth, decoder.Frames[0].PixelHeight);
+    }
+
     public static IReadOnlyList<(string Path, int Width, int Height)> SelectImages(string title)
     {
         var dialog = new OpenFileDialog

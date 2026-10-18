@@ -1,4 +1,4 @@
-using System.IO.Pipes;
+﻿using System.IO.Pipes;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using HalconTraining.Application.Workers;
@@ -7,7 +7,19 @@ using HalconTraining.Persistence.Environment;
 using HalconTraining.Halcon.Datasets;
 using HalconTraining.Halcon.Training;
 
-var detectionSeed = GetOption(args, "--detection-bootstrap");
+var detectionExport = GetOption(args, "--detection-export-hdict");
+if (detectionExport is not null)
+{
+    try
+    {
+        Console.WriteLine(JsonSerializer.Serialize(DetectionDatasetFile.Export(detectionExport,
+            GetOption(args,"--output") ?? throw new ArgumentException("缺少--output"))));
+        return 0;
+    }
+    catch (Exception error) { Console.Error.WriteLine(error); return 1; }
+}
+
+var detectionSeed = GetOption(args, "--detection-train") ?? GetOption(args, "--detection-bootstrap");
 if (detectionSeed is not null)
 {
     try
@@ -35,7 +47,8 @@ if (detectionModel is not null)
         var outcome = DetectionPredictor.Predict(detectionModel,
             GetOption(args, "--image-list") ?? throw new ArgumentException("缺少--image-list"),
             GetOption(args, "--output-json") ?? throw new ArgumentException("缺少--output-json"),
-            item => { Console.WriteLine(JsonSerializer.Serialize(item)); Console.Out.Flush(); });
+            item => { Console.WriteLine(JsonSerializer.Serialize(item)); Console.Out.Flush(); },
+            double.Parse(GetOption(args, "--confidence") ?? "0.05", System.Globalization.CultureInfo.InvariantCulture));
         Console.WriteLine(JsonSerializer.Serialize(outcome));
         return 0;
     }

@@ -1,4 +1,4 @@
-# HalconTrainingPlatform
+﻿# HalconTrainingPlatform
 
 ## Scope
 
@@ -46,3 +46,6 @@ Use the project's HALCON 24.11 package `24111.0.0`, .NET 8, and x64. The current
 - Advanced parameters, logs and detailed metrics start collapsed. Explain blocked operations and invalid input immediately.
 - White/light gray, one blue accent, necessary status colors only. No decorative gradients, shadows, icons or card collections.
 - Validate the first-use flow: select dataset → start training → view result → test original images, including empty/error/running/stopped states.
+- Folder-based annotation and prelabel bootstrapping are independent per child folder: derive the class name from that folder, show only its images, require five confirmed images within that folder, export/train a single-class snapshot, and predict only its remaining images with its own model under `models/detection/<class>/`. Keep these prelabel models separate. Final HALCON training explicitly combines approved images from all folders into one multi-class `.hdict` and model; retain class IDs and exclude pending/rework/draft-only images and categories without approved images.
+- Folder names select the drawing class; they never supply automatic boxes or approval. Preserve human-approved labels, saved drafts, failed inputs and other folders when merging predictions.
+- Detection folder training can select multiple independently eligible classes with a concurrency limit of 1 or 2. Snapshot each class before dispatch, retain separate worker progress/logs/models, serialize model-map registration, isolate job failures, and cancel queued as well as running work on stop. Do not claim HALCON concurrent GPU support from a YOLO-only validation.

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.ComponentModel;
+using System.Text;
 using HalconTraining.Application.Workspace;
 
 namespace HalconTraining.App.Services;
@@ -25,8 +26,12 @@ public sealed class YoloProcessRunner : IHalconProcessRunner
         var start = new ProcessStartInfo(python)
         {
             UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true,
-            RedirectStandardError = true, WorkingDirectory = workingDirectory
+            RedirectStandardError = true, WorkingDirectory = workingDirectory,
+            StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8
         };
+        start.Environment["PYTHONIOENCODING"] = "utf-8";
+        start.Environment["PYTHONUTF8"] = "1";
+        start.Environment["PYTHONUNBUFFERED"] = "1";
         start.ArgumentList.Add(script);
         foreach (var argument in arguments) start.ArgumentList.Add(argument);
         using var process = new Process { StartInfo = start };

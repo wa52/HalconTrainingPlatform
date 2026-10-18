@@ -3,7 +3,15 @@
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  xmlns:h="clr-namespace:HalconDotNet;assembly=MVTec.HalconDotNet-Windows">
  <Grid Background="#18232C" MinHeight="200">
-  <h:HSmartWindowControlWPF x:Name="Display" HKeepAspectRatio="True"/>
-  <TextBlock x:Name="Message" Text="选择目标检测图片" Foreground="#B8CBD8" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"/>
+  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+  <DockPanel Background="White" Margin="0,0,0,6">
+   <Button DockPanel.Dock="Right" Content="适应窗口" Padding="8,3" MinHeight="26" Click="FitClicked"/>
+   <TextBlock Text="框内移动 · 边角调整 · 空白处画框（Shift 可重叠）" FontSize="12" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" ToolTip="左键拖动框内移动，边角调整大小；Shift+拖动强制新建框。滚轮缩放，右键平移，Esc取消本次操作。"/>
+  </DockPanel>
+  <Grid Grid.Row="1" ClipToBounds="True">
+   <h:HSmartWindowControlWPF x:Name="Display" HKeepAspectRatio="True" IsHitTestVisible="False" HMoveContent="False" HZoomContent="Off" HDoubleClickToFitContent="False" BorderThickness="0"/>
+   <Canvas x:Name="InputCanvas" Background="Transparent" Focusable="True" ClipToBounds="True" Cursor="Cross"/>
+   <TextBlock x:Name="Message" Text="选择目标检测图片" Foreground="#B8CBD8" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"/>
+  </Grid>
  </Grid>
 </UserControl>

@@ -1,4 +1,4 @@
-# HALCON 训练平台
+﻿# HALCON 训练平台
 
 独立 Windows x64 / .NET 8 **WPF 桌面程序**。当前正式入口是 `src/HalconTraining.App/bin/Release/net8.0-windows/HalconTraining.App.exe`，桌面“HALCON 训练平台”快捷方式直接指向它。运行不需要浏览器、Node、HTTP或WebView。
 
@@ -15,6 +15,10 @@
 真实训练/测试已验收的任务为**图像分类和语义分割**。分类监控显示验证准确率，原图测试显示预测类别和全类别置信度；独立报告包含混淆矩阵和每类召回率。目标检测、实例分割、OCR和异常任务可读取/识别及匹配基础模型，尚未接通完整训练适配器，界面不冒充可执行。
 
 ## 目标检测主动学习（审核/数据准备）
+
+支持按文件夹选择多个类别进行并行训练，同时运行数可设为 1 或 2，其余排队。各类别分别显示 Epoch、Loss、耗时并保存独立模型；停止会取消运行与排队任务。P2/P3 两个 YOLO Worker 的真实重叠运行、独立模型登记及三任务取消已通过本机验证；HALCON 引擎并发与正式检测精度仍需独立验收。
+
+主要入口为「导入文件夹」：根目录的每个子文件夹是一个**独立类别**，分别挑图画框、确认、训练和预测。当前类别至少确认5张后才能训练；模型分别保存在 `models/detection/<类别名>/run_.../`。点击「预测其余图像」仅处理该类别，保留人工标注和草稿，不跨文件夹混合训练或共享模型。
 
 数据集页新增「目标检测 · 主动学习」：**无模型时**标注任意数量图片，**人工确认满5张且每类别有有效检测框**即可使用YOLO26n预训练权重进行探索性微调；训练得到未验收检测模型，可直接对新图片批量预标注。**已有检测模型时**选择YOLO `.pt` 或带有匹配 `preprocess.hdict` 的HALCON `.hdl` 并多选图片，直接批量预测，无需手写 JSON。审核队列按置信度、类别得分差及工件/批次排序，支持修改/添加/删除框、恢复审核会话，只将人工确认标签导出为 COCO。详见 [docs/ACTIVE_LEARNING_DETECTION.md](docs/ACTIVE_LEARNING_DETECTION.md)。
 
@@ -52,3 +56,5 @@ WPF程序支持显式开发验证参数 `--validate-desktop --validation-output 
 分类流程和数据生命周期见 [docs/CLASSIFICATION.md](docs/CLASSIFICATION.md)。
 
 UI 的最高标准为“简洁、有效、清晰，以操作效率为第一目标”，具体准则见 [UI_SIMPLICITY.md](docs/UI_SIMPLICITY.md)。
+
+目标检测标注完成后，顶部「导出 .hdict」合并所有类别已确认图像；「合并 HALCON 训练」导出后训练一个多类别模型。未确认、仅预测、草稿及需重标图像不会进入训练。详情见 [目标检测流程](docs/ACTIVE_LEARNING_DETECTION.md)。

@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -11,6 +11,13 @@ namespace HalconTraining.App.Services;
 public sealed record DetectionCategory(int Id, string Name);
 public sealed record DetectionBox(int ClassId, double Confidence, double Col1, double Row1, double Col2, double Row2,
     double? RunnerUpConfidence = null);
+public sealed record DetectionPredictionSummary(int Processed, int DetectedImages, int EmptyImages, int TotalBoxes, int Failed)
+{
+    public string Description => $"已处理 {Processed:N0} 张 · 有框 {DetectedImages:N0} 张（{TotalBoxes:N0} 个框） · 未检出 {EmptyImages:N0} 张 · 失败 {Failed:N0} 张";
+    public static DetectionPredictionSummary From(IReadOnlyList<DetectionReviewImage> images, int failed) =>
+        new(images.Count + failed, images.Count(image => image.PredictedBoxes.Count > 0),
+            images.Count(image => image.PredictedBoxes.Count == 0), images.Sum(image => image.PredictedBoxes.Count), failed);
+}
 public sealed class DetectionPredictionImage
 {
     public string ImagePath { get; set; } = "";
@@ -32,6 +39,7 @@ public sealed class DetectionReviewImage
     public int Width { get; set; }
     public int Height { get; set; }
     public string? GroupId { get; set; }
+    public int? FolderClassId { get; set; }
     public List<DetectionBox> PredictedBoxes { get; set; } = [];
     public List<DetectionBox> ReviewedBoxes { get; set; } = [];
     public bool HasDraft { get; set; }
@@ -45,7 +53,16 @@ public sealed class DetectionReviewSession
     public string Id { get; set; } = "";
     public string ModelId { get; set; } = "";
     public string SourcePredictionFile { get; set; } = "";
+    public string DatasetName { get; set; } = "";
+    public string? SourceDirectory { get; set; }
+    public List<string> ImportIssues { get; set; } = [];
     public string? LastTrainedModelPath { get; set; }
+    public string? CombinedModelPath { get; set; }
+    public Dictionary<int, string> FolderModels { get; set; } = [];
+    public int? SelectedFolderClassId { get; set; }
+    public int? PredictionMaxBoxes { get; set; }
+    public double PredictionConfidence { get; set; } = .05;
+    public Dictionary<int, double> FolderPredictionConfidences { get; set; } = [];
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public List<DetectionCategory> Classes { get; set; } = [];
@@ -56,11 +73,63 @@ public sealed class DetectionReviewSession
 /// Validates predictions, ranks an active-learning review queue, saves reviews atomically,
 /// and exports only human-approved boxes to COCO. Does not modify original images/datasets.
 /// </summary>
-public sealed class DetectionActiveLearningStore(string workspaceRoot)
+public sealed partial class DetectionActiveLearningStore(string workspaceRoot)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { WriteIndented = true };
     private readonly string _sessions = Path.Combine(workspaceRoot, "active-learning", "sessions");
     private readonly string _exports = Path.Combine(workspaceRoot, "active-learning", "exports");
+
+    /// <summary>Limit model candidates only; manual decisions are never reduced by inference settings.</summary>
+    public static IReadOnlyList<DetectionBox> ReviewBoxes(DetectionReviewImage image, int maxPredictions)
+    {
+        if (maxPredictions is < 1 or > 300) throw new ArgumentOutOfRangeException(nameof(maxPredictions));
+        if (image.HasDraft || image.Status == "approved") return image.ReviewedBoxes;
+        return image.PredictedBoxes.OrderByDescending(box => box.Confidence).Take(maxPredictions).ToArray();
+    }
+
+    /// <summary>Only valid positive pending reviews in the requested folder can be approved in bulk.</summary>
+    public static IReadOnlyList<DetectionReviewImage> BulkApprovalCandidates(DetectionReviewSession session,
+        int? folderClassId, int maxPredictions)
+    {
+        if (session.SourceDirectory is not null && folderClassId is null)
+            throw new InvalidOperationException("请选择一个类别文件夹，禁止跨类别全部确认。");
+        var categories = folderClassId is { } id
+            ? session.Classes.Where(category => category.Id == id).ToArray() : session.Classes.ToArray();
+        var candidates = new List<DetectionReviewImage>();
+        foreach (var image in session.Images.Where(image => image.Status == "pending" &&
+            (folderClassId is null || image.FolderClassId == folderClassId)))
+        {
+            var boxes = ReviewBoxes(image, maxPredictions);
+            if (boxes.Count == 0 || !File.Exists(image.ImagePath)) continue;
+            try { ValidateReviewedBoxes(image, boxes, categories); }
+            catch (InvalidDataException) { continue; }
+            candidates.Add(image);
+        }
+        return candidates;
+    }
+
+    public async Task<(DetectionReviewSession Session, int Count, string BackupFile)> ApproveAllAsync(
+        DetectionReviewSession session, int? folderClassId, int maxPredictions)
+    {
+        var next = JsonSerializer.Deserialize<DetectionReviewSession>(JsonSerializer.Serialize(session, Json), Json)!;
+        var candidates = BulkApprovalCandidates(next, folderClassId, maxPredictions);
+        if (candidates.Count == 0) return (session, 0, "");
+        foreach (var image in candidates)
+        {
+            image.ReviewedBoxes = ReviewBoxes(image, maxPredictions).ToList();
+            image.HasDraft = true;
+            image.Status = "approved";
+            image.Reason = "用户批量确认";
+        }
+        // Preserve the exact pre-confirmation state before the atomic session replacement.
+        var backupFolder = Path.Combine(workspaceRoot, "active-learning", "review-backups");
+        Directory.CreateDirectory(backupFolder);
+        var backup = Path.Combine(backupFolder, DateTimeOffset.UtcNow.ToString("yyyyMMdd_HHmmss") +
+            "_" + Guid.NewGuid().ToString("N")[..8] + ".json");
+        await File.WriteAllTextAsync(backup, JsonSerializer.Serialize(session, Json));
+        await SaveAsync(next);
+        return (next, candidates.Count, backup);
+    }
 
     public static (double Priority, string Reason) Rank(IReadOnlyList<DetectionBox> boxes)
     {
@@ -183,7 +252,7 @@ public sealed class DetectionActiveLearningStore(string workspaceRoot)
         return additions.Count;
     }
 
-    public async Task<DetectionReviewSession> ImportAsync(string filename)
+    public async Task<DetectionReviewSession> ImportAsync(string filename, bool persist = true)
     {
         var full = Path.GetFullPath(filename);
         var input = JsonSerializer.Deserialize<DetectionPredictionFile>(await File.ReadAllTextAsync(full), Json)
@@ -220,7 +289,7 @@ public sealed class DetectionActiveLearningStore(string workspaceRoot)
                 PredictedBoxes = item.Boxes.ToList(), Priority = priority, Reason = reason
             });
         }
-        await SaveAsync(session);
+        if (persist) await SaveAsync(session);
         return session;
     }
 
@@ -281,6 +350,7 @@ public sealed class DetectionActiveLearningStore(string workspaceRoot)
                 {
                     id = annotationId++, image_id = imageId, category_id = box.ClassId,
                     bbox = new[] { box.Col1, box.Row1, box.Col2 - box.Col1, box.Row2 - box.Row1 },
+                    halcon_bbox = new[] { box.Row1, box.Col1, box.Row2, box.Col2 },
                     area = (box.Col2 - box.Col1) * (box.Row2 - box.Row1), iscrowd = 0
                 });
         }

@@ -42,15 +42,67 @@ public partial class App : System.Windows.Application
         var viewModel=new DesktopWorkspaceViewModel(new TrainingWorkspace(new HalconProcessRunner(),new FileWorkspaceStore(root)),new WorkspaceDialogs(),new NamedPipeTrainingWorkerClient());
         var window = new MainWindow(viewModel);
         MainWindow = window;
-        window.Show();
         window.Loaded+=async(_,_)=>
         {
             await viewModel.InitializeAsync();
+            if (e.Args.Contains("--validate-hdict-export"))
+            {
+                var outputIndex=Array.IndexOf(e.Args,"--validation-output");
+                if(outputIndex<0||outputIndex+1>=e.Args.Length)throw new ArgumentException("缺少验证输出目录。");
+                viewModel.SelectedPageIndex=DesktopWorkspaceViewModel.DatasetPage;
+                window.DatasetPages.SelectedIndex=1;
+                Shutdown(await DetectionFolderValidation.RunHdictExportAsync(window,viewModel.ActiveLearning,e.Args[outputIndex+1]));
+                return;
+            }
+            if (e.Args.Contains("--train-reviewed-hdict"))
+            {
+                viewModel.SelectedPageIndex = DesktopWorkspaceViewModel.DatasetPage;
+                window.DatasetPages.SelectedIndex = 1;
+                await DetectionFolderValidation.TrainReviewedHalconAsync(window,viewModel.ActiveLearning,
+                    Path.Combine(root,"artifacts","hdict-training","native-batch"));
+                await viewModel.RefreshModelsAsync();
+                return;
+            }
+            if (e.Args.Contains("--validate-parallel-detection") || e.Args.Contains("--validate-parallel-cancel"))
+            {
+                var outputIndex = Array.IndexOf(e.Args, "--validation-output");
+                if (outputIndex < 0 || outputIndex + 1 >= e.Args.Length) throw new ArgumentException("缺少验证输出目录。");
+                viewModel.SelectedPageIndex = DesktopWorkspaceViewModel.DatasetPage;
+                window.DatasetPages.SelectedIndex = 1;
+                Shutdown(e.Args.Contains("--validate-parallel-cancel")
+                    ? await DetectionFolderValidation.RunParallelCancellationAsync(window, viewModel.ActiveLearning, e.Args[outputIndex + 1])
+                    : await DetectionFolderValidation.RunParallelTrainingAsync(window, viewModel.ActiveLearning, e.Args[outputIndex + 1]));
+                return;
+            }
+            if (e.Args.Contains("--validate-detection-feedback"))
+            {
+                var outputIndex = Array.IndexOf(e.Args, "--validation-output");
+                if (outputIndex < 0 || outputIndex + 1 >= e.Args.Length) throw new ArgumentException("缺少验证输出目录。");
+                viewModel.SelectedPageIndex = DesktopWorkspaceViewModel.DatasetPage;
+                window.DatasetPages.SelectedIndex = 1;
+                Shutdown(await DetectionFolderValidation.RunTrainingFeedbackAsync(window, viewModel.ActiveLearning, e.Args[outputIndex + 1]));
+                return;
+            }
+            var folderIndex = Array.IndexOf(e.Args, "--detection-folder");
+            if (folderIndex >= 0 && folderIndex + 1 < e.Args.Length)
+            {
+                viewModel.SelectedPageIndex = DesktopWorkspaceViewModel.DatasetPage;
+                window.DatasetPages.SelectedIndex = 1;
+                if (e.Args.Contains("--validate-folder-detection"))
+                {
+                    var outputIndex = Array.IndexOf(e.Args, "--validation-output");
+                    if (outputIndex < 0 || outputIndex + 1 >= e.Args.Length) throw new ArgumentException("缺少验证输出目录。");
+                    Shutdown(await DetectionFolderValidation.RunAsync(window, viewModel.ActiveLearning, e.Args[folderIndex + 1], e.Args[outputIndex + 1]));
+                    return;
+                }
+                await viewModel.ActiveLearning.ImportFolderAsync(e.Args[folderIndex + 1]);
+            }
             if(e.Args.Contains("--validate-desktop"))
             {
                 var result=await DesktopValidation.RunAsync(window,viewModel,e.Args);Shutdown(result);
             }
         };
+        window.Show();
     }
     protected override void OnExit(ExitEventArgs e)
     {

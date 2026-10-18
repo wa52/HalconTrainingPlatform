@@ -10,8 +10,9 @@ namespace HalconTraining.Halcon.Training;
 /// </summary>
 public static class DetectionPredictor
 {
-    public static object Predict(string modelFile, string imageListJson, string outputJson, Action<object> report)
+    public static object Predict(string modelFile, string imageListJson, string outputJson, Action<object> report, double confidence = .05)
     {
+        if (!double.IsFinite(confidence) || confidence <= 0 || confidence > 1) throw new ArgumentOutOfRangeException(nameof(confidence));
         if (!File.Exists(modelFile)) throw new FileNotFoundException("目标检测模型不存在。", modelFile);
         var imagePaths = JsonSerializer.Deserialize<string[]>(File.ReadAllText(imageListJson))
             ?? throw new InvalidDataException("没有待预测的图像。");
@@ -25,6 +26,7 @@ public static class DetectionPredictor
             HOperatorSet.GetDlModelParam(model, "type", out var type);
             using (type)
                 if (type.S != "detection") throw new InvalidDataException("选择的不是 HALCON 目标检测模型。");
+            HOperatorSet.SetDlModelParam(model, "min_confidence", confidence);
             HOperatorSet.GetDlModelParam(model, "instance_type", out var instanceType);
             using (instanceType)
                 if (instanceType.S != "rectangle1")

@@ -9,7 +9,7 @@
   <Border Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1" Padding="24,10">
    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="240"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
     <TextBlock Text="HALCON 训练平台" FontSize="21" FontWeight="SemiBold" VerticalAlignment="Center"/>
-    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="16,0"><TextBlock Text="{Binding TaskName}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding DatasetPath}"/><TextBlock Text="{Binding DatasetCaption}" FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,3,0,0"/></StackPanel>
+    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="16,0"><TextBlock Text="{Binding CurrentTaskName}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding CurrentDatasetPath}"/><TextBlock Text="{Binding CurrentDatasetCaption}" FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,3,0,0"/></StackPanel>
     <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
      <TextBlock Text="{Binding EnvironmentState}" VerticalAlignment="Center" ToolTip="{Binding EnvironmentDetails}"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Foreground" Value="{StaticResource MutedBrush}"/><Style.Triggers><DataTrigger Binding="{Binding EnvironmentHealthy}" Value="True"><Setter Property="Foreground" Value="{StaticResource SuccessBrush}"/></DataTrigger><DataTrigger Binding="{Binding EnvironmentAttention}" Value="True"><Setter Property="Foreground" Value="{StaticResource WarningBrush}"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock>
      <Button Content="检查环境" Command="{Binding ProbeEnvironmentCommand}" IsEnabled="{Binding IsIdle}" Padding="10,6" Margin="12,0,0,0"/>
@@ -100,6 +100,6 @@
     </Grid>
    </TabItem>
   </TabControl>
-  <Border Grid.Row="2" Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Padding="24,10"><TextBlock Text="{Binding Status}" TextWrapping="Wrap" MaxHeight="60"/></Border>
+  <Border Grid.Row="2" Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Padding="24,10"><TextBlock Text="{Binding CurrentStatus}" TextWrapping="Wrap" MaxHeight="60"/></Border>
  </Grid>
 </Window>

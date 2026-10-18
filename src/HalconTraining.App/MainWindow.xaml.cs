@@ -11,6 +11,10 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = viewModel;
+        DatasetPages.SelectionChanged+=(_,args)=>
+        {
+            if(ReferenceEquals(args.Source,DatasetPages))viewModel.DetectionSelected=DatasetPages.SelectedIndex==1;
+        };
         var errors=new HashSet<ValidationError>();
         EventHandler<ValidationErrorEventArgs> trackParameterErrors=(_,event_)=>
         {

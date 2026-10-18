@@ -88,15 +88,17 @@ class YoloSeedTest(unittest.TestCase):
 
         class FakeBoxes:
             def __init__(self, one):
-                self.xyxy = FakeTensor([[10, 15, 30, 25]] if one else [])
-                self.cls = FakeTensor([1.0] if one else [])
-                self.conf = FakeTensor([0.27] if one else [])
+                self.xyxy = FakeTensor([[10, 15, 30, 25], [11, 16, 31, 26], [12, 17, 32, 27]] if one else [])
+                self.cls = FakeTensor([1.0, 1.0, 1.0] if one else [])
+                self.conf = FakeTensor([0.06, 0.27, 0.07] if one else [])
 
         class FakeModel:
             def __init__(self, path):
                 self.names = {0: "scratch", 1: "dent"}
 
             def predict(self, source, **kwargs):
+                self_test.assertEqual(kwargs['max_det'], 1)
+                self_test.assertEqual(kwargs['conf'], .01)
                 return [SimpleNamespace(
                     boxes=FakeBoxes(source.endswith("01.png")),
                     orig_shape=(80, 100),
@@ -109,19 +111,23 @@ class YoloSeedTest(unittest.TestCase):
                     return False
 
         original = module.require_ultralytics
+        self_test = self
         module.require_ultralytics = lambda: (FakeModel, FakeTorch)
         try:
             output = self.root / "predictions.json"
             module.predict(SimpleNamespace(
                 model=str(model_file), images_json=str(images_json),
-                output_json=str(output), imgsz=640
+                output_json=str(output), imgsz=640, max_det=1, confidence=.01
             ))
             proposal = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(proposal["schemaVersion"], 1)
             self.assertEqual([category["id"] for category in proposal["classes"]], [1, 8])
             self.assertEqual(proposal["images"][0]["boxes"][0]["classId"], 8)
             self.assertEqual(proposal["images"][0]["boxes"][0]["confidence"], .27)
+            self.assertEqual(len(proposal["images"][0]["boxes"]), 1)
+            self.assertEqual(proposal["images"][0]["boxes"][0]["col1"], 11)
             self.assertEqual(proposal["images"][1]["boxes"], [])
+            self.assertEqual(proposal['summary'], {'processed': 2, 'detectedImages': 1, 'emptyImages': 1, 'totalBoxes': 1, 'failed': 0})
             self.assertEqual(json.loads(output.with_suffix(".errors.json").read_text()), [])
         finally:
             module.require_ultralytics = original
@@ -131,6 +137,28 @@ class YoloSeedTest(unittest.TestCase):
         self.write()
         with self.assertRaisesRegex(ValueError, "5"):
             module.prepare_coco(str(self.coco), str(self.root / "yolo"))
+
+    def test_zero_detections_reported_without_inventing_boxes(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        model_file = self.root / 'empty.pt'
+        model_file.write_bytes(b'fake-weights')
+        images_file = self.root / 'empty-inputs.json'
+        images_file.write_text(json.dumps([str(self.images / '01.png'), str(self.images / '02.png')]), encoding='utf-8')
+        class EmptyModel:
+            names = {0: 'P2'}
+            def __init__(self, path):
+                pass
+            def predict(self, **kwargs):
+                return [SimpleNamespace(boxes=None, orig_shape=(80,100))]
+        torch = SimpleNamespace(cuda=SimpleNamespace(is_available=lambda:False))
+        output = self.root / 'empty-result.json'
+        with patch.object(module, 'require_ultralytics', return_value=(EmptyModel, torch)):
+            module.predict(SimpleNamespace(model=str(model_file), images_json=str(images_file),
+                output_json=str(output), imgsz=256, max_det=1, confidence=.05))
+        result = json.loads(output.read_text(encoding='utf-8'))
+        self.assertTrue(all(not image['boxes'] for image in result['images']))
+        self.assertEqual(result['summary'], {'processed':2, 'detectedImages':0, 'emptyImages':2, 'totalBoxes':0, 'failed':0})
 
     def test_reject_missing_category_positive_boxes(self):
         self.data["annotations"].pop()

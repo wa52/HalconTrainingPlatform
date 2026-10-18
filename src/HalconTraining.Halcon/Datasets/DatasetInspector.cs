@@ -27,12 +27,17 @@ public static class DatasetInspector
                 var splitCounts = new Dictionary<string, int> { ["训练集"] = 0, ["验证集"] = 0, ["测试集"] = 0 };
                 var hasGroupMetadata = false;
                 var groups = new List<string?>();
+                var storedSplits = new List<string?>();
+                var isDetectionDataset = true;
                 for(var i=0;i<samples.Length;i++)
                 {
                     using var sample=samples.TupleSelect(i);
                     var keys=Keys(sample);
                     using var group=Value(sample,keys.Contains("workpiece_id")?"workpiece_id":"batch_id");
                     groups.Add(group.Length>0?group[0].ToString():null);
+                    using var split=Value(sample,"split");
+                    storedSplits.Add(split.Length==1 ? split.S switch {"train"=>"训练集","validation"=>"验证集","test"=>"测试集",_=>null}:null);
+                    isDetectionDataset &= keys.Contains("bbox_label_id") && !keys.Contains("mask");
                 }
                 hasGroupMetadata=groups.Any(group=>!string.IsNullOrWhiteSpace(group));
                 var plan=DatasetSplit.Create(groups,seed,trainPercent,validationPercent);
@@ -40,6 +45,8 @@ public static class DatasetInspector
                 foreach(var i in plan.Train)assignment[i]="训练集";
                 foreach(var i in plan.Validation)assignment[i]="验证集";
                 foreach(var i in plan.Test)assignment[i]="测试集";
+                var useStoredSplits=isDetectionDataset && storedSplits.Count>0 && storedSplits.All(split=>split is not null);
+                if(useStoredSplits)assignment=storedSplits.Select(split=>split!).ToArray();
                 foreach (var i in Enumerable.Range(0, samples.Length))
                 {
                     using var sample = samples.TupleSelect(i);
@@ -83,7 +90,7 @@ public static class DatasetInspector
                 if (tasks.Count != 1) issues.Add(tasks.Count == 0 ? "无法从样本标注识别任务。" : "样本包含多种任务标注，请检查数据集。");
                 if (task is "ocr" or "anomaly") issues.Add("该数据需要结合模型或任务元信息区分训练组件。");
                 return new { task, imageCount = samples.Length, classCount = classes.Length, annotationCount = count,
-                    maskCount, splitCounts, splitStrategy = "优先按显式工件/批次ID分组，否则按图像；预览划分未改写源字典",
+                    maskCount, splitCounts, splitStrategy = useStoredSplits ? "保留检测数据集已有 split 划分；未改写源字典" : "优先按显式工件/批次ID分组，否则按图像；预览划分未改写源字典",
                     classes = Enumerable.Range(0, classes.Length).Select(i => classes[i].S).ToArray(), samples = rows, issues };
             }
 

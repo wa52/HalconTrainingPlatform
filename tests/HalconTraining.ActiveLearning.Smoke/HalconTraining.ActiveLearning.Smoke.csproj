@@ -7,6 +7,12 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../src/HalconTraining.Application/HalconTraining.Application.csproj" />
     <Compile Include="../../src/HalconTraining.App/Services/DetectionActiveLearningStore.cs" Link="DetectionActiveLearningStore.cs" />
+    <Compile Include="../../src/HalconTraining.App/Services/DetectionFolderImport.cs" Link="DetectionFolderImport.cs" />
+    <Compile Include="../../src/HalconTraining.App/Services/DetectionBoxGesture.cs" Link="DetectionBoxGesture.cs" />
+    <Compile Include="../../src/HalconTraining.App/Services/YoloProcessRunner.cs" Link="YoloProcessRunner.cs" />
+    <Compile Include="../../src/HalconTraining.App/Services/DetectionProgressMessage.cs" Link="DetectionProgressMessage.cs" />
+    <Content Include="../fixtures/yolo_progress_probe.py" Link="worker/yolo_active_learning.py" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

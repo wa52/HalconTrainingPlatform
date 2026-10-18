@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -119,6 +120,7 @@ def require_ultralytics():
 
 
 def train(args):
+    emit("初始化训练环境", pid=os.getpid())
     YOLO, torch = require_ultralytics()
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -132,7 +134,9 @@ def train(args):
     detector = YOLO(args.model)
 
     def on_epoch(trainer):
-        emit("训练", epoch=trainer.epoch + 1, epochs=args.epochs)
+        loss = getattr(trainer, "tloss", None)
+        emit("训练", epoch=trainer.epoch + 1, epochs=args.epochs,
+             loss=float(loss.sum().item()) if loss is not None else None)
 
     detector.add_callback("on_train_epoch_end", on_epoch)
     detector.train(
@@ -162,6 +166,13 @@ def train(args):
 
 
 def predict(args):
+    emit("初始化预测环境")
+    max_detections = args.max_det
+    if not 1 <= max_detections <= 300:
+        raise ValueError("每图最多预测框数需在 1～300 之间。")
+    confidence = args.confidence
+    if not math.isfinite(confidence) or not 0 < confidence <= 1:
+        raise ValueError("预测阈值需大于 0 且不超过 1。")
     YOLO, torch = require_ultralytics()
     model_file = Path(args.model).resolve()
     if not model_file.is_file():
@@ -199,7 +210,7 @@ def predict(args):
             if not path.is_file():
                 raise FileNotFoundError(str(path))
             response = detector.predict(
-                source=str(path), conf=0.05, iou=0.7, max_det=300,
+                source=str(path), conf=confidence, iou=0.7, max_det=max_detections,
                 imgsz=args.imgsz, device=0 if torch.cuda.is_available() else "cpu",
                 verbose=False,
             )[0]
@@ -222,6 +233,7 @@ def predict(args):
                         "col2": max(0, min(right, float(response.orig_shape[1]))),
                         "row2": max(0, min(bottom, float(response.orig_shape[0]))),
                     })
+            boxes = sorted(boxes, key=lambda box: box['confidence'], reverse=True)[:max_detections]
             proposals.append({
                 "imagePath": str(path),
                 "width": int(response.orig_shape[1]), "height": int(response.orig_shape[0]),
@@ -232,15 +244,20 @@ def predict(args):
         emit("预测", processed=i+1, total=len(paths), successful=len(proposals), failed=len(errors))
     if not proposals:
         raise RuntimeError("全部图片预测失败，请检查图片和模型环境。")
+    summary = {"processed": len(paths), "detectedImages": sum(bool(image['boxes']) for image in proposals),
+               "emptyImages": sum(not image['boxes'] for image in proposals),
+               "totalBoxes": sum(len(image['boxes']) for image in proposals), "failed": len(errors)}
     payload = {
         "schemaVersion": 1,
+        "predictionOptions": {"maxDetections": max_detections, "confidence": confidence, "iou": 0.7},
+        "summary": summary,
         "modelId": "yolo:" + hashlib.sha256(model_file.read_bytes()).hexdigest()[:12],
         "classes": [{"id": original_ids[i], "name": names[i]} for i in ordered],
         "images": proposals,
     }
     output.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     output.with_suffix(".errors.json").write_text(json.dumps(errors, ensure_ascii=False, indent=2), encoding="utf-8")
-    emit("预测完成", successful=len(proposals), failed=len(errors), outputJson=str(output))
+    emit("预测完成", successful=len(proposals), **summary, outputJson=str(output))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -262,6 +279,8 @@ def main(argv: list[str] | None = None) -> int:
     q.add_argument("--images-json", required=True)
     q.add_argument("--output-json", required=True)
     q.add_argument("--imgsz", type=int, default=640)
+    q.add_argument("--max-det", type=int, default=300)
+    q.add_argument("--confidence", type=float, default=0.05)
     args = parser.parse_args(argv)
     try:
         if args.action == "prepare":

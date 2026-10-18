@@ -1,6 +1,7 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Text.Json;
 using HalconDotNet;
+using HalconTraining.Halcon.Datasets;
 
 namespace HalconTraining.Halcon.Training;
 
@@ -10,56 +11,24 @@ namespace HalconTraining.Halcon.Training;
 /// </summary>
 public static class DetectionBootstrapTrainer
 {
-    private sealed record Box(int ClassId, double Col1, double Row1, double Col2, double Row2);
-    private sealed record Sample(string Path, int Width, int Height, Box[] Boxes);
 
     public static object Train(string cocoFile, string backboneFile, string outputDirectory,
         int epochs, int batchSize, int width, int height, double learningRate, Action<object> progress)
     {
         if (!File.Exists(cocoFile) || !File.Exists(backboneFile))
-            throw new FileNotFoundException("找不到人工标注 COCO 或 HALCON 预训练 backbone。");
+            throw new FileNotFoundException("找不到检测数据集或 HALCON 预训练 backbone。");
         if (epochs < 1 || batchSize < 1 || width < 64 || height < 64 ||
             width % 32 != 0 || height % 32 != 0 || learningRate <= 0 || !double.IsFinite(learningRate))
             throw new ArgumentException("参数无效：尺寸需要≥64且为32倍数，Batch/Epoch/学习率必须大于零。");
 
-        using var doc = JsonDocument.Parse(File.ReadAllText(cocoFile));
-        var root = doc.RootElement;
-        var classPairs = root.GetProperty("categories").EnumerateArray()
-            .Select(value => (Id: value.GetProperty("id").GetInt32(), Name: value.GetProperty("name").GetString() ?? ""))
-            .ToArray();
-        if (classPairs.Length == 0 || classPairs.Any(c => string.IsNullOrWhiteSpace(c.Name)) ||
-            classPairs.Select(c => c.Id).Distinct().Count() != classPairs.Length)
-            throw new InvalidDataException("COCO 类别列表无效。");
+        var nativeDataset = Path.GetExtension(cocoFile).Equals(".hdict", StringComparison.OrdinalIgnoreCase);
+        var data = nativeDataset ? DetectionDatasetFile.Read(cocoFile) : DetectionDatasetFile.ReadCoco(cocoFile);
+        var classPairs = data.Classes;
         var labelIds = classPairs.Select(c => c.Id).ToArray();
-        var boxesByImage = root.GetProperty("annotations").EnumerateArray()
-            .GroupBy(value => value.GetProperty("image_id").GetInt32())
-            .ToDictionary(group => group.Key, group => group.Select(value =>
-            {
-                var rect = value.GetProperty("bbox").EnumerateArray().Select(x => x.GetDouble()).ToArray();
-                if (rect.Length != 4) throw new InvalidDataException("COCO bbox 必须为 x,y,w,h。");
-                var categoryId = value.GetProperty("category_id").GetInt32();
-                if (!labelIds.Contains(categoryId)) throw new InvalidDataException("检测标注引用了未定义类别。");
-                return new Box(categoryId, rect[0], rect[1], rect[0] + rect[2], rect[1] + rect[3]);
-            }).ToArray());
-        var imagesDirectory = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(cocoFile))!, "images");
-        var samples = root.GetProperty("images").EnumerateArray().Select(image =>
-        {
-            var id = image.GetProperty("id").GetInt32();
-            var filename = image.GetProperty("file_name").GetString() ?? "";
-            // Exported image names have no path separators; prevent reading outside the snapshot.
-            if (filename != Path.GetFileName(filename) || filename.Length == 0)
-                throw new InvalidDataException("COCO 图像路径必须位于 images 目录。");
-            var imageWidth = image.GetProperty("width").GetInt32();
-            var imageHeight = image.GetProperty("height").GetInt32();
-            var boxes = boxesByImage.GetValueOrDefault(id, []);
-            if (boxes.Any(box => box.Col1 < 0 || box.Row1 < 0 || box.Col2 > imageWidth ||
-                box.Row2 > imageHeight || box.Col1 >= box.Col2 || box.Row1 >= box.Row2))
-                throw new InvalidDataException("COCO 检测框越界。");
-            return new Sample(Path.Combine(imagesDirectory, filename), imageWidth, imageHeight, boxes);
-        }).ToArray();
-
-        if (samples.Length < 5 || samples.Length < batchSize)
-            throw new InvalidDataException("初始训练至少需要5张已人工确认的图片，且Batch不能大于图片数。");
+        // Validation/test samples never enter the optimizer.
+        var samples = data.Images.Where(image => image.Split == "train").ToArray();
+        if (data.Images.Length < 5 || samples.Length == 0 || samples.Length < batchSize)
+            throw new InvalidDataException("数据集总计至少需要5张已确认图片，且训练集不得为空、Batch不能大于训练集数量。");
         if (samples.SelectMany(s => s.Boxes).Any() == false)
             throw new InvalidDataException("没有目标框；已审核无目标图片可参与训练，但必须同时有正样本。");
         var missing = classPairs.Where(c => !samples.SelectMany(s => s.Boxes).Any(b => b.ClassId == c.Id))
@@ -78,13 +47,16 @@ public static class DetectionBootstrapTrainer
         }
 
         // HALCON 24.11 generates a detector from the shipped pretrained classifier backbone.
-        HOperatorSet.CreateDlModelDetection(backboneFile, classPairs.Length, new HTuple(), out var model);
+        // Detection input dimensions are creation parameters in HALCON 24.11, not settable afterwards.
+        HOperatorSet.CreateDict(out var parameters);
+        using var detectionParameters = parameters;
+        HOperatorSet.SetDictTuple(parameters,"image_width",width);
+        HOperatorSet.SetDictTuple(parameters,"image_height",height);
+        HOperatorSet.CreateDlModelDetection(backboneFile, classPairs.Length, parameters, out var model);
         using (model)
         {
             HOperatorSet.SetDlModelParam(model, "class_ids", new HTuple(labelIds));
             HOperatorSet.SetDlModelParam(model, "class_names", new HTuple(classPairs.Select(c => c.Name).ToArray()));
-            HOperatorSet.SetDlModelParam(model, "image_width", width);
-            HOperatorSet.SetDlModelParam(model, "image_height", height);
             HOperatorSet.SetDlModelParam(model, "batch_size", batchSize);
             HOperatorSet.SetDlModelParam(model, "learning_rate", learningRate);
             HOperatorSet.QueryAvailableDlDevices("runtime", "gpu", out var devices);
@@ -131,16 +103,12 @@ public static class DetectionBootstrapTrainer
                             using var image = new HImage(item.Path);
                             image.GetImageSize(out int actualWidth, out int actualHeight);
                             if (actualWidth != item.Width || actualHeight != item.Height)
-                                throw new InvalidDataException("实际图像尺寸与COCO标注不一致：" + item.Path);
+                                throw new InvalidDataException("实际图像尺寸与数据集标注不一致：" + item.Path);
                             HOperatorSet.CreateDict(out var sample);
                             using (sample)
                             {
                                 HOperatorSet.SetDictObject(image, sample, "image");
-                                HOperatorSet.SetDictTuple(sample, "bbox_label_id", new HTuple(item.Boxes.Select(b => b.ClassId).ToArray()));
-                                HOperatorSet.SetDictTuple(sample, "bbox_row1", new HTuple(item.Boxes.Select(b => b.Row1).ToArray()));
-                                HOperatorSet.SetDictTuple(sample, "bbox_col1", new HTuple(item.Boxes.Select(b => b.Col1).ToArray()));
-                                HOperatorSet.SetDictTuple(sample, "bbox_row2", new HTuple(item.Boxes.Select(b => b.Row2).ToArray()));
-                                HOperatorSet.SetDictTuple(sample, "bbox_col2", new HTuple(item.Boxes.Select(b => b.Col2).ToArray()));
+                                DetectionDatasetFile.SetBoxes(sample, item.Boxes);
                                 batch[j] = sample[0];
                             }
                         }
@@ -177,7 +145,9 @@ public static class DetectionBootstrapTrainer
                 createdAt = DateTimeOffset.UtcNow, epochs, batchSize, width, height, learningRate,
                 sourceAnnotationsSha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(cocoFile))),
                 backboneFile, classIds = labelIds, classNames = classPairs.Select(c => c.Name).ToArray(),
-                images = samples.Length, labelBoxes = samples.Sum(s => s.Boxes.Length), lossHistory,
+                images = samples.Length, totalImages = data.Images.Length, validationImages = data.Images.Count(i => i.Split == "validation"),
+                testImages = data.Images.Count(i => i.Split == "test"), sourceDataset = Path.GetFullPath(cocoFile),
+                labelBoxes = samples.Sum(s => s.Boxes.Length), lossHistory,
                 warning = "小样本初始训练模型，仅供未标注图片预标注；未执行独立mAP/召回率验收，禁止用于生产判定。"
             };
             File.WriteAllText(Path.Combine(outputDirectory, "manifest.json"),
