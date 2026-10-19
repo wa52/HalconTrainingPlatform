@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Ultralytics YOLO detection fine-tuning and prediction for HALCON WPF active learning.
 
-prepare: convert human-approved COCO snapshot to YOLO labels (Python stdlib only).
-train: fine-tune pretrained detection weights on >=5 approved images (NOT validated).
+prepare: convert COCO training snapshot including empty-label negatives to YOLO labels (Python stdlib only).
+train: fine-tune pretrained detection weights on >=5 training images (NOT validated).
 predict: write schemaVersion=1 proposals for human review, never ground truth.
 """
 from __future__ import annotations
@@ -51,7 +51,7 @@ def prepare_coco(coco_file: str, output_folder: str) -> dict:
             raise ValueError("图片 ID、名称或尺寸无效。")
         image_file = source.parent / "images" / filename
         if not image_file.is_file():
-            raise FileNotFoundError("审核图片不存在：" + str(image_file))
+            raise FileNotFoundError("训练图片不存在：" + str(image_file))
         image_info[image_id] = (filename, w, h, image_file)
     boxes = {image_id: [] for image_id in image_info}
     positive_categories = set()
@@ -75,7 +75,7 @@ def prepare_coco(coco_file: str, output_folder: str) -> dict:
         positive_categories.add(category_id)
     if set(ids) != positive_categories:
         missing = [entry["name"] for entry in categories if entry["id"] not in positive_categories]
-        raise ValueError("以下类别没有任何人工确认的目标框：" + "、".join(missing))
+        raise ValueError("以下类别没有任何目标框：" + "、".join(missing))
 
     # Every snapshot is immutable; image names are already unique in COCO exporter.
     images_out, labels_out = target / "images" / "train", target / "labels" / "train"
@@ -99,8 +99,8 @@ def prepare_coco(coco_file: str, output_folder: str) -> dict:
         "sourceCocoSha256": hashlib.sha256(source.read_bytes()).hexdigest(),
         "classIds": ids,
         "classNames": names,
-        "approvedImages": len(images),
-        "approvedBoxes": sum(map(len, boxes.values())),
+        "trainingImages": len(images),
+        "trainingBoxes": sum(map(len, boxes.values())),
         "warning": "Train-only seed dataset. Validation/test metrics are NOT available.",
     }
     (target / "source.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -128,9 +128,9 @@ def train(args):
         raise ValueError("Epoch、Batch、尺寸和学习率参数无效。")
     dataset_folder = output / "dataset"
     info = prepare_coco(args.coco, str(dataset_folder))
-    if args.batch > info["approvedImages"]:
-        raise ValueError("Batch 不能大于人工确认的图片数量。")
-    emit("开始微调", approvedImages=info["approvedImages"], pretrained=args.model)
+    if args.batch > info["trainingImages"]:
+        raise ValueError("Batch 不能大于训练图片数量。")
+    emit("开始微调", trainingImages=info["trainingImages"], pretrained=args.model)
     detector = YOLO(args.model)
 
     def on_epoch(trainer):

@@ -16,7 +16,7 @@
 
 每个完整 Epoch 原子替换 `model.hdl`，并写入 `checkpoint.json`、`performance.json`。停止不登记为完成模型；后续可手选检查点继续微调。`training_params.json` 记录本轮参数、来源模型和数据 SHA-256；最终 `manifest.json` 保存来源、耗时和逐轮性能。`training.log` 在 Worker 中持续写入并刷新，`worker.log` 保存正常退出时的标准输出/错误，不相互覆盖。
 
-所有训练仍只使用已确认图片导出的 train 划分，validation/test 不进入优化器。增加或减少 Epoch、改变 Batch/尺寸都可能影响精度，不能以训练 Loss 代替独立 mAP。
+目标检测数据集包含全部未移除图像，不再按确认状态筛选；使用当前框，无框自动作为负样本。优化器仍只读取导出后的 train 划分，validation/test 不进入优化器。增加或减少 Epoch、改变 Batch/尺寸都可能影响精度，不能以训练 Loss 代替独立 mAP。
 
 ## 本机基准（2026-10-19）
 

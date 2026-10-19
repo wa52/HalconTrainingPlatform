@@ -143,9 +143,9 @@ public static class DetectionDatasetFile
             finally { if (File.Exists(temporary)) File.Delete(temporary); }
         }
         var result = new { status="exported",datasetFile=outputFile,task="detection",images=data.Images.Length,
-            boxes=data.Images.Sum(i=>i.Boxes.Length),classes=data.Classes.Select(c=>new {id=c.Id,name=c.Name}),
+            boxes=data.Images.Sum(i=>i.Boxes.Length),negativeImages=data.Images.Count(i=>i.Boxes.Length==0),classes=data.Classes.Select(c=>new {id=c.Id,name=c.Name}),
             splitCounts=new {train=plan.Train.Length,validation=plan.Validation.Length,test=plan.Test.Length},seed,trainPercent,validationPercent,
-            roundTripVerified=true,note="仅人工确认标签；按标注类别分层、图像划分，需核对相似工件跨集合风险。移动时请保留 images 子目录。" };
+            roundTripVerified=true,note="保留全部快照图像；无框为负样本。按标注类别分层划分，移动时请保留 images 子目录。" };
         File.WriteAllText(Path.ChangeExtension(outputFile,"export.json"),JsonSerializer.Serialize(result,new JsonSerializerOptions {WriteIndented=true}));
         return result;
     }

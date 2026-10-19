@@ -1,4 +1,4 @@
-﻿using System.Security.Cryptography;
+using System.Security.Cryptography;
 using System.Diagnostics;
 using System.Text.Json;
 using HalconDotNet;
@@ -35,13 +35,13 @@ public static class DetectionBootstrapTrainer
         // Validation/test samples never enter the optimizer.
         var samples = data.Images.Where(image => image.Split == "train").ToArray();
         if (data.Images.Length < 5 || samples.Length == 0 || samples.Length < batchSize)
-            throw new InvalidDataException("数据集总计至少需要5张已确认图片，且训练集不得为空、Batch不能大于训练集数量。");
+            throw new InvalidDataException("数据集总计至少需要5张图片，且训练集不得为空、Batch不能大于训练集数量。");
         if (samples.SelectMany(s => s.Boxes).Any() == false)
-            throw new InvalidDataException("没有目标框；已审核无目标图片可参与训练，但必须同时有正样本。");
+            throw new InvalidDataException("没有目标框；无框负样本可参与训练，但必须同时有正样本。");
         var missing = classPairs.Where(c => !samples.SelectMany(s => s.Boxes).Any(b => b.ClassId == c.Id))
             .Select(c => c.Name).ToArray();
         if (missing.Length > 0)
-            throw new InvalidDataException("以下类别没有已审核的检测框：" + string.Join("、", missing));
+            throw new InvalidDataException("以下类别没有检测框：" + string.Join("、", missing));
         foreach (var item in samples)
             if (!File.Exists(item.Path)) throw new FileNotFoundException("COCO 图像缺失。", item.Path);
         Directory.CreateDirectory(outputDirectory);

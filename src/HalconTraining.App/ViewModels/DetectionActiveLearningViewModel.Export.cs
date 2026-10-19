@@ -7,7 +7,8 @@ public sealed partial class DetectionActiveLearningViewModel
 {
     public AsyncCommand ExportHalconCommand { get; }
     public AsyncCommand ExportAllHalconCommand { get; }
-    public bool CanExportAllHalcon => !IsBusy && _session?.Images.Any(i=>i.Status=="approved")==true;
+    public bool CanExportHalcon => !IsBusy && TrainingSession?.Images.Count>0;
+    public bool CanExportAllHalcon => !IsBusy && _session?.Images.Count>0;
 
     private void RestoreCombinedTrainingFeedback()
     {
@@ -39,7 +40,7 @@ public sealed partial class DetectionActiveLearningViewModel
     private async Task<string> ExportHalconSnapshotAsync(DetectionReviewSession scope, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
-        var folder = await Task.Run(() => _store.ExportApprovedCocoAsync(scope), token);
+        var folder = await Task.Run(() => _store.ExportTrainingCocoAsync(scope,PredictionMaxBoxes), token);
         var name = string.Concat((string.IsNullOrWhiteSpace(scope.DatasetName) ? "detection" : scope.DatasetName)
             .Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
         var file = Path.Combine(folder, name + ".hdict");
@@ -55,11 +56,12 @@ public sealed partial class DetectionActiveLearningViewModel
     public Task ExportHalconDatasetAsync(bool allCategories = false) => ExecuteAsync(async () =>
     {
         if (_session is null) return;
+        await SaveCurrentTrainingEditsAsync();
         var snapshot = System.Text.Json.JsonSerializer.Deserialize<DetectionReviewSession>(System.Text.Json.JsonSerializer.Serialize(_session))!;
         var scopes = allCategories
-            ? new[] { DetectionActiveLearningStore.CombinedApprovedScope(snapshot) }
+            ? new[] { DetectionActiveLearningStore.AllTrainingScope(snapshot,true,PredictionMaxBoxes) }
             : new[] { TrainingSession ?? throw new InvalidOperationException("请选择类别文件夹。") };
-        if (scopes.Length == 0) throw new InvalidOperationException("没有已确认的标注可导出。");
+        if (scopes.Length == 0) throw new InvalidOperationException("没有可导出的图像。");
         using var cts = new CancellationTokenSource(); _operation=cts;
         OnPropertyChanged(nameof(CanStopOperation));
         StartOperation("导出",scopes.Length);
@@ -71,7 +73,7 @@ public sealed partial class DetectionActiveLearningViewModel
                 Status = "正在导出并复读校验："+scope.DatasetName;
                 files.Add(await ExportHalconSnapshotAsync(scope,cts.Token));
             }
-            FinishOperation("HALCON 数据集已导出",$"共 {files.Count} 份；仅已确认图像，按类别自动划分 70% / 15% / 15%。",true);
+            FinishOperation("HALCON 数据集已导出",$"共 {files.Count} 份；全部未移除图像（含负样本），按类别自动划分 70% / 15% / 15%。",true);
             Status = string.Join(Environment.NewLine,files);
         }
         catch (Exception error) { FinishOperation(cts.IsCancellationRequested?"导出已停止":"导出失败",error.Message,false); throw; }

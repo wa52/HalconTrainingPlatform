@@ -45,11 +45,11 @@ class YoloSeedTest(unittest.TestCase):
     def write(self):
         self.coco.write_text(json.dumps(self.data), encoding="utf-8")
 
-    def test_five_approved_images_enough_and_negatives_preserved(self):
+    def test_five_training_images_enough_and_negatives_preserved(self):
         self.write()
         info = module.prepare_coco(str(self.coco), str(self.root / "yolo"))
-        self.assertEqual(info["approvedImages"], 5)
-        self.assertEqual(info["approvedBoxes"], 2)
+        self.assertEqual(info["trainingImages"], 5)
+        self.assertEqual(info["trainingBoxes"], 2)
         self.assertEqual(info["classIds"], [1, 8])
         self.assertEqual(len(list((self.root / "yolo" / "images" / "train").glob("*"))), 5)
         self.assertEqual((self.root / "yolo" / "labels" / "train" / "03.txt").read_text(), "")

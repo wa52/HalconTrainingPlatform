@@ -1,6 +1,7 @@
 using System.Text.Json;
 using HalconTraining.App.Services;
 using HalconTraining.Application.Workers;
+using HalconTraining.Application.Workspace;
 
 var root = Path.Combine(Path.GetTempPath(), "halcon-al-smoke-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
@@ -446,7 +447,40 @@ try
     var emptyRemoval=await removalStore.ImportFolderAsync(removalRoot,_=>(100,80),(await removalStore.LoadLatestAsync())!);
     Require(emptyRemoval.Images.Count==0&&emptyRemoval.RemovedImagePaths.Count==3,"Removing the last image persists an empty dataset without resurrection");
     foreach(var path in new[]{removedFile,keptFile,otherFile})Require((await File.ReadAllBytesAsync(path)).SequenceEqual(new byte[]{1,2,3,4}),"Removal never changes source file bytes");
-    Console.WriteLine("PASS: detection review/folder isolation/gestures/UTF8/progress/bulk approval/bounded concurrency/failure isolation/cancellation/image removal and persistence");
+    var allSession=new DetectionReviewSession {Id="all-training",Classes=[new(1,"part")],CreatedAt=DateTimeOffset.UtcNow};
+    for(var i=0;i<6;i++)
+    {
+        var path=Path.Combine(root,$"all-{i}.png");await File.WriteAllBytesAsync(path,[1,2,3,4]);
+        allSession.Images.Add(new(){ImagePath=path,Width=100,Height=80,FolderClassId=1});
+    }
+    var label=new DetectionBox(1,.9,10,10,40,40);
+    allSession.Images[0].Status="approved";allSession.Images[0].ReviewedBoxes=[label];
+    allSession.Images[1].HasDraft=true;allSession.Images[1].ReviewedBoxes=[label with{Col1=12}];
+    allSession.Images[1].PredictedBoxes=[label];
+    allSession.Images[2].PredictedBoxes=[label];
+    allSession.Images[3].Status="rework";allSession.Images[3].ReviewedBoxes=[label];
+    allSession.Images[5].HasDraft=true;allSession.Images[5].PredictedBoxes=[label];
+    var allPrepared=DetectionActiveLearningStore.TrainingSnapshot(allSession,1);
+    Require(allPrepared.Images.Count==6&&allSession.Images[2].ReviewedBoxes.Count==0,"All images selected without mutating source predictions");
+    Require(allPrepared.Images[1].ReviewedBoxes[0].Col1==12&&allPrepared.Images[2].TrainingLabelSource=="prediction","Manual boxes override predictions and provenance distinguishes pseudo-labels");
+    Require(allPrepared.Images[4].ReviewedBoxes.Count==0&&allPrepared.Images[5].ReviewedBoxes.Count==0,"Unlabelled images and empty human drafts are negative samples, even with stale predictions");
+    Require(allPrepared.Images[2].Status=="pending"&&allPrepared.Images[3].Status=="rework","Training never falsely approves pending or rework images");
+    var trainingCoco=await store.ExportTrainingCocoAsync(allPrepared,1);
+    using(var doc=JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(trainingCoco,"annotations.json"))))
+        Require(doc.RootElement.GetProperty("images").GetArrayLength()==6&&doc.RootElement.GetProperty("annotations").GetArrayLength()==4,"Export includes all six images and only four positive annotations");
+    using(var doc=JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(trainingCoco,"provenance.json"))))
+        Require(doc.RootElement.GetProperty("negativeImages").GetInt32()==2&&doc.RootElement.GetProperty("selectionPolicy").GetString()=="all-active-images","Provenance records automatic negative count and all-image policy");
+    var backgroundFolder=DetectionActiveLearningStore.CloneSession(allSession);backgroundFolder.Classes.Add(new(2,"background-folder"));backgroundFolder.Images[4].FolderClassId=2;
+    var combinedAll=DetectionActiveLearningStore.AllTrainingScope(backgroundFolder,true);
+    Require(combinedAll.Images.Count==6&&combinedAll.Classes.Count==1,"A background-only folder contributes negatives without an unsupported object category");
+    var removalGuard=DetectionActiveLearningStore.CloneSession(allSession);removalGuard.RemovedImagePaths.Add(removalGuard.Images[2].ImagePath);
+    Require(DetectionActiveLearningStore.TrainingSnapshot(removalGuard).Images.Count==5,"Explicitly removed images stay excluded under all-image training");
+    var allBackground=DetectionActiveLearningStore.CloneSession(allSession);
+    foreach(var image in allBackground.Images){image.HasDraft=true;image.ReviewedBoxes=[];image.PredictedBoxes=[];}
+    var negativeOnlyRejected=false;
+    try{DetectionActiveLearningStore.TrainingSnapshot(allBackground);}catch(InvalidOperationException){negativeOnlyRejected=true;}
+    Require(negativeOnlyRejected,"A negative-only dataset cannot train a detector without any object example");
+    Console.WriteLine("PASS: detection review/folder isolation/gestures/UTF8/progress/bulk approval/bounded concurrency/failure isolation/cancellation/image removal/all-image training/negative samples/empty-box negatives");
 }
 finally
 {

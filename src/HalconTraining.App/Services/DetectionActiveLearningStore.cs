@@ -43,6 +43,7 @@ public sealed class DetectionReviewImage
     public List<DetectionBox> PredictedBoxes { get; set; } = [];
     public List<DetectionBox> ReviewedBoxes { get; set; } = [];
     public bool HasDraft { get; set; }
+    public string? TrainingLabelSource { get; set; }
     public string Status { get; set; } = "pending";
     public double Priority { get; set; }
     public string Reason { get; set; } = "";
@@ -352,6 +353,17 @@ public sealed partial class DetectionActiveLearningStore(string workspaceRoot)
     {
         var approved = session.Images.Where(image => image.Status == "approved").ToArray();
         if (approved.Length == 0) throw new InvalidOperationException("没有人工确认的图片，禁止导出训练标签。");
+        return await ExportCocoCoreAsync(session,approved,false);
+    }
+
+    public Task<string> ExportTrainingCocoAsync(DetectionReviewSession session,int maxPredictions=300)
+    {
+        var snapshot=TrainingSnapshot(session,maxPredictions);
+        return ExportCocoCoreAsync(snapshot,snapshot.Images.ToArray(),true);
+    }
+
+    private async Task<string> ExportCocoCoreAsync(DetectionReviewSession session,DetectionReviewImage[] approved,bool allImages)
+    {
         var export = Path.Combine(_exports, DateTimeOffset.UtcNow.ToString("yyyyMMdd_HHmmss") + "_" + Guid.NewGuid().ToString("N")[..8]);
         var imageFolder = Path.Combine(export, "images");
         Directory.CreateDirectory(imageFolder);
@@ -378,14 +390,18 @@ public sealed partial class DetectionActiveLearningStore(string workspaceRoot)
         }
         await File.WriteAllTextAsync(Path.Combine(export, "annotations.json"), JsonSerializer.Serialize(new
         {
-            info = new { description = "Human-approved active-learning detection annotations", version = "1.0" },
+            info = new { description = allImages?"All active images: current boxes, empty boxes are negative samples":"Human-approved active-learning detection annotations", version = "1.0" },
             images, annotations, categories = session.Classes.Select(c => new { id = c.Id, name = c.Name }).ToArray()
         }, Json));
         await File.WriteAllTextAsync(Path.Combine(export, "provenance.json"), JsonSerializer.Serialize(new
         {
             sessionId = session.Id, session.ModelId, session.SourcePredictionFile, exportedAt = DateTimeOffset.UtcNow,
-            approvedImages = approved.Length, approvedBoxes = annotationId - 1, unreviewedImages = session.Images.Count - approved.Length,
-            note = "Only approved labels exported. Rework/pending predictions are not ground truth."
+            exportedImages=approved.Length,exportedBoxes=annotationId-1,
+            approvedImages = approved.Count(i=>i.Status=="approved"), negativeImages=approved.Count(i=>i.ReviewedBoxes.Count==0),
+            unreviewedImages = approved.Count(i=>i.Status!="approved"),
+            selectionPolicy=allImages?"all-active-images":"approved-only",
+            labels=approved.Select(i=>new{image=Path.GetFileName(i.ImagePath),i.Status,i.TrainingLabelSource}),
+            note = allImages?"Includes unconfirmed labels. Images with no current boxes are negative samples.":"Only approved labels exported."
         }, Json));
         return export;
     }

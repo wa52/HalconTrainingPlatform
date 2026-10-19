@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
@@ -41,7 +41,7 @@ public sealed class DetectionReviewRow(DetectionReviewImage image, string? categ
     public DetectionReviewImage Image { get; } = image;
     public string Name => Path.GetFileName(Image.ImagePath);
     public string ClassName => categoryName ?? "—";
-    public string Status => Image.Status switch { "approved" => "已确认", "rework" => "需重标",
+    public string Status => DetectionActiveLearningStore.TrainingBoxes(Image).Count==0?"负样本":Image.Status switch { "approved" => "已确认", "rework" => "需重标",
         _ when !Image.HasDraft && Image.PredictedBoxes.Count == 0 && Image.Reason.StartsWith("未检测到目标", StringComparison.Ordinal) => "未检出目标",
         _ => "待审核" };
     public string Priority => Image.Priority.ToString("P0");
@@ -70,7 +70,7 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
     private bool _parameterErrors, _refreshingQueue;
     private bool _predictionParameterErrors;
     private bool _busy;
-    private string _status = "导入图片根文件夹，每个子文件夹一个类别；先框选并确认少量图片，再训练和预测其余图像。";
+    private string _status = "导入图片根文件夹，每个子文件夹一个类别；有框按当前框训练，无框自动作为负样本。";
     private string _lastExport = "";
     private IReadOnlyList<DetectionBox> _previewBoxes = [];
     private readonly Stopwatch _operationElapsed = new();
@@ -80,7 +80,7 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
     private string _trainingScopeName = "";
     private string OperationDatasetName => IsTrainingOperation && _trainingScopeName.Length > 0 ? _trainingScopeName : DatasetName;
     public string CombinedDatasetSummary => _session is null ? "" :
-        $"合并训练仅使用已确认图像：{_session.Images.Where(i=>i.Status=="approved").SelectMany(i=>i.ReviewedBoxes.Select(b=>b.ClassId)).Distinct().Count()} 类 · {_session.Images.Count(i=>i.Status=="approved"):N0} 张；其余 {_session.Images.Count(i=>i.Status!="approved"):N0} 张不参与";
+        $"训练包含全部 {_session.Images.Count:N0} 张 · 负样本 {_session.Images.Count(i=>DetectionActiveLearningStore.TrainingBoxes(i,PredictionMaxBoxes).Count==0):N0} 张；已移除图像不参与";
     private bool _operationActive, _hasOperationFeedback;
     private double _operationProgress;
     private int _operationTotal, _operationCurrent;
@@ -109,7 +109,7 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
         ClearInitialModelCommand = new RelayCommand(_ => { if(IsBusy)return; _initialModelFile = null; ContinuePreviousHalconModel=true; OnPropertyChanged(nameof(HalconModelSourceDescription)); });
         ParallelTrainCommand = new AsyncCommand(async _ =>
         {
-            if (!CanParallelTrain) { Status = "至少两个类别分别确认 5 张且训练参数有效后可并行训练。"; return; }
+            if (!CanParallelTrain) { Status = "至少两个有框类别各有 5 张图像且训练参数有效后可并行训练，不要求已确认。"; return; }
             var selection = DetectionParallelTrainingDialog.Select(EligibleParallelCategories, SelectedCategory?.Id,
                 BootstrapEpochs, BootstrapBatch, BootstrapSize);
             if (selection is not null) await TrainCategoriesAsync(selection.ClassIds, selection.Concurrency);
@@ -170,8 +170,8 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
     {
         get
         {
-            if (_session is null) return "HALCON 合并训练：选择并确认数据后自动匹配模型。";
-            try { return HalconDetectionModelSource.Resolve(DetectionActiveLearningStore.CombinedApprovedScope(_session), BootstrapSize,
+            if (_session is null) return "HALCON 合并训练：选择数据后自动匹配模型。";
+            try { return HalconDetectionModelSource.Resolve(DetectionActiveLearningStore.AllTrainingScope(_session,true,PredictionMaxBoxes), BootstrapSize,
                 ContinuePreviousHalconModel, ContinuePreviousHalconModel ? _initialModelFile : null).Description; }
             catch (Exception error) when(error is InvalidDataException or InvalidOperationException) { return error.Message; }
         }
@@ -185,7 +185,7 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
         ContinuePreviousHalconModel = true;
         OnPropertyChanged(nameof(HalconModelSourceDescription));
     }
-    public bool CanCombinedTrain => !IsBusy && !HasParameterErrors && ValidTrainingParameters && _session?.Images.Count(i=>i.Status=="approved")>=Math.Max(5,BootstrapBatch);
+    public bool CanCombinedTrain => !IsBusy && !HasParameterErrors && ValidTrainingParameters && _session?.Images.Count>=Math.Max(5,BootstrapBatch);
     public AsyncCommand PredictExistingCommand { get; }
     public AsyncCommand PredictTrainedCommand { get; }
     public AsyncCommand PredictRemainingCommand { get; }
@@ -223,7 +223,7 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
             OnPropertyChanged(nameof(IsIdle));
             OnPropertyChanged(nameof(CanReview));
             OnPropertyChanged(nameof(CanRemoveBox));
-            OnPropertyChanged(nameof(CanExport));
+            OnPropertyChanged(nameof(CanExport)); OnPropertyChanged(nameof(CanExportHalcon));
             OnPropertyChanged(nameof(CanExportAllHalcon));
             OnPropertyChanged(nameof(CanBootstrap)); OnPropertyChanged(nameof(CanCombinedTrain));
             OnPropertyChanged(nameof(TrainingEligibility));
@@ -246,7 +246,7 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
     public bool IsOperationActive { get => _operationActive; private set { SetProperty(ref _operationActive, value); OnPropertyChanged(nameof(IsTrainingOperation)); OnPropertyChanged(nameof(IsPredictingOperation)); OnPropertyChanged(nameof(TrainButtonLabel)); OnPropertyChanged(nameof(PredictRemainingLabel)); OnPropertyChanged(nameof(TrainingEligibility)); } }
     public bool IsTrainingOperation => IsOperationActive && _operationKind == "训练";
     public bool IsPredictingOperation => IsOperationActive && _operationKind == "预测";
-    public string TrainButtonLabel => IsTrainingOperation ? "训练中…" : "本类预标注训练";
+    public string TrainButtonLabel => IsTrainingOperation ? "训练中…" : "本类训练";
     public bool HasOperationFeedback { get => _hasOperationFeedback; private set => SetProperty(ref _hasOperationFeedback, value); }
     public string OperationHeadline { get => _operationHeadline; private set => SetProperty(ref _operationHeadline, value); }
     public string OperationDetail { get => _operationDetail; private set => SetProperty(ref _operationDetail, value); }
@@ -265,8 +265,7 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
         ? SelectedCategory?.Id is { } id ? DetectionActiveLearningStore.FolderScope(_session!, id) : null
         : _session;
     public bool CanBootstrap => !IsBusy && !HasParameterErrors && ValidTrainingParameters && TrainingSession is { } scope &&
-        BootstrapBatch <= scope.Images.Count(image => image.Status == "approved") &&
-        DetectionActiveLearningStore.ReadyForBootstrap(scope);
+        scope.Images.Count>=Math.Max(5,BootstrapBatch) && scope.Images.Any(i=>DetectionActiveLearningStore.TrainingBoxes(i,PredictionMaxBoxes).Count>0);
     private bool ValidTrainingParameters => BootstrapEpochs > 0 && BootstrapBatch > 0 && BootstrapSize >= 64 &&
         BootstrapSize % 32 == 0 && double.IsFinite(BootstrapRate) && BootstrapRate > 0 && BootstrapRate < 1;
     public bool HasParameterErrors
@@ -283,14 +282,10 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
             if (HasParameterErrors || !ValidTrainingParameters) return "请检查训练参数；尺寸需为 32 的倍数，学习率需在 0～1 之间。";
             var scope = TrainingSession;
             if (scope is null) return "请选择一个类别文件夹；各类别独立训练和预测。";
-            var confirmed = scope.Images.Count(image => image.Status == "approved");
-            if (confirmed < 5) return $"已确认 {confirmed} 张，还差 {5 - confirmed} 张可启动微调";
-            if (BootstrapBatch > confirmed) return "Batch 不能大于已确认的图片数量。";
-            var missing = scope.Classes.Where(category => !scope.Images.Where(image => image.Status == "approved")
-                .SelectMany(image => image.ReviewedBoxes).Any(box => box.ClassId == category.Id)).Select(category => category.Name).ToArray();
-            return DetectionActiveLearningStore.ReadyForBootstrap(scope)
-                ? $"{DatasetName} · 已确认 {confirmed} 张，可独立训练此类别（探索性）"
-                : "以下类别还需确认检测框：" + string.Join("、", missing);
+            if(scope.Images.Count<5)return $"数据集至少需要 5 张图像，当前 {scope.Images.Count} 张。";
+            if(BootstrapBatch>scope.Images.Count)return "Batch 不能大于图像数量。";
+            if(!scope.Images.Any(i=>DetectionActiveLearningStore.TrainingBoxes(i,PredictionMaxBoxes).Count>0))return "本类全部无框，将作为负样本；请与有框类别合并训练。";
+            return $"全部 {scope.Images.Count} 张参与 · 无框 {scope.Images.Count(i=>DetectionActiveLearningStore.TrainingBoxes(i,PredictionMaxBoxes).Count==0)} 张作为负样本。";
         }
     }
     public int PredictionMaxBoxes
@@ -329,7 +324,7 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
             OnPropertyChanged(nameof(CanApproveAll));
         }
     }
-    public string PredictionPolicy => $"预测阈值 {PredictionConfidence:P1} · 每图最多 {PredictionMaxBoxes} 个预测框 · 仍需人工确认";
+    public string PredictionPolicy => $"预测阈值 {PredictionConfidence:P1} · 每图最多 {PredictionMaxBoxes} 个预测框 · 按当前框训练，无框为负样本";
     public bool CanPredictTrained => !IsBusy && !HasPredictionParameterErrors && _trainedModel is not null && File.Exists(_trainedModel);
     public bool HasTrainedModel => _trainedModel is not null && File.Exists(_trainedModel);
     public int RemainingPredictionCount => TrainingSession is not { } scope ? 0 : DetectionActiveLearningStore.PredictionCandidates(scope).Count;
@@ -381,7 +376,7 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
         : $"{DatasetName} · {_session.Images.Count:N0} 张 · {_session.Classes.Count} 类";
     public string ClassesInfo => _session is null ? "" : string.Join("    ", _session.Classes.Select(c => $"{c.Id} = {c.Name}"));
     public string ReviewProgress => TrainingSession is not { } scope ? "0 / 0" :
-        $"{scope.Images.Count(i => i.Status == "approved")} 已确认 / {scope.Images.Count(i => i.Status == "pending")} 待审核 / {scope.Images.Count(i => i.Status == "rework")} 需重标";
+        $"{scope.Images.Count(i => i.Status == "approved")} 已确认 / {scope.Images.Count(i=>DetectionActiveLearningStore.TrainingBoxes(i,PredictionMaxBoxes).Count>0)} 有框 / {scope.Images.Count(i=>DetectionActiveLearningStore.TrainingBoxes(i,PredictionMaxBoxes).Count==0)} 负样本";
     public DetectionReviewRow? SelectedRow
     {
         get => _selectedRow;
@@ -554,7 +549,7 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
             LastExport = "";
             _selectedCategory = null;
             RefreshQueue();
-            Status = $"已读取 {_session.Images.Count:N0} 张、{_session.Classes.Count} 个独立类别。选类别和图片画框，确认后训练。" +
+            Status = $"已读取 {_session.Images.Count:N0} 张、{_session.Classes.Count} 个独立类别。选类别和图片画框，全部图像参与训练，无框为负样本。" +
                 (_session.ImportIssues.Count > 0 ? $" 读取提示 {_session.ImportIssues.Count} 项，可在更多操作中查看。" : "");
         }
         catch (OperationCanceledException) { Status = "读取已停止，原有会话和源文件保持不变。"; }
@@ -563,7 +558,7 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
 
     public Task PredictRemainingAsync() => ExecuteAsync(async () =>
     {
-        if (!HasTrainedModel || _session is null) throw new InvalidOperationException("请先确认少量图片并完成训练。");
+        if (!HasTrainedModel || _session is null) throw new InvalidOperationException("请先为部分图像画框并完成训练。");
         var scope = TrainingSession ?? throw new InvalidOperationException("请选择一个类别文件夹。");
         var images = DetectionActiveLearningStore.PredictionCandidates(scope)
             .Select(image => (Path: image.ImagePath, image.Width, image.Height)).ToArray();
@@ -586,7 +581,7 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
         OnPropertyChanged(nameof(TrainedModel));
         OnPropertyChanged(nameof(CanPredictTrained));
         RefreshQueue();
-        Status = $"已创建初始标注：{images.Count} 张。标多少由你决定；人工确认至少 5 张且每类有目标框，即可微调预训练模型。";
+        Status = $"已创建数据集：{images.Count} 张；全部图像参与，无框图像作为负样本。总计至少 5 张并有目标框即可训练，不要求已确认。";
     }
 
     private async Task AddImagesAsync()
@@ -627,17 +622,19 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
         return "yolo26n.pt";
     }
 
-    public Task TrainCombinedCategoriesAsync() => ExecuteAsync(() => TrainDetectionScopeAsync(
-        _session is null ? null : DetectionActiveLearningStore.CombinedApprovedScope(_session),true));
+    public Task TrainCombinedCategoriesAsync() => ExecuteAsync(async()=>{
+        await SaveCurrentTrainingEditsAsync();
+        await TrainDetectionScopeAsync(_session is null?null:DetectionActiveLearningStore.AllTrainingScope(_session,true,PredictionMaxBoxes),true);
+    });
 
-    private Task BootstrapAsync() => TrainDetectionScopeAsync(TrainingSession,false);
+    private async Task BootstrapAsync(){await SaveCurrentTrainingEditsAsync();await TrainDetectionScopeAsync(TrainingSession,false);}
 
     private async Task TrainDetectionScopeAsync(DetectionReviewSession? scope,bool combined)
     {
-        if (scope is null || !DetectionActiveLearningStore.ReadyForBootstrap(scope))
-            throw new InvalidOperationException("请先人工确认至少 5 张图片，并保证每类至少有一个目标框。");
+        if (scope is null || scope.Images.Count<5)
+            throw new InvalidOperationException("数据集至少需要 5 张图像，不要求已确认。");
         if (_trainingBusy()) throw new InvalidOperationException("请先结束主训练任务。");
-        if (HasParameterErrors || !ValidTrainingParameters || BootstrapBatch > scope.Images.Count(image => image.Status == "approved"))
+        if (HasParameterErrors || !ValidTrainingParameters || BootstrapBatch > scope.Images.Count)
             throw new InvalidOperationException("训练参数无效：尺寸≥64且为32的倍数，Batch/Epoch/学习率需大于0。");
         var yolo = !combined && TrainingEngine == "YOLO · 预训练";
         var yoloBase = yolo ? ResolveYoloBaseModel() : "";
@@ -647,7 +644,7 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
         if (!yolo && modelSource!.InitialModelFile is null && !File.Exists(backbone))
             throw new FileNotFoundException("找不到 HALCON compact 检测骨干基础模型。", backbone);
         ParallelJobs.Clear(); OnPropertyChanged(nameof(HasParallelJobs));
-        _trainingScopeName = combined ? $"{scope.DatasetName} · 合并 {scope.Classes.Count} 类 · {scope.Images.Count(i=>i.Status=="approved"):N0} 张已确认" : scope.DatasetName;
+        _trainingScopeName = combined ? $"{scope.DatasetName} · 合并 {scope.Classes.Count} 类 · 全部 {scope.Images.Count:N0} 张" : scope.DatasetName;
         StartOperation("训练", BootstrapEpochs);
         var datasetFolder = string.IsNullOrEmpty(scope.DatasetName) ? scope.Id :
             string.Concat(scope.DatasetName.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
@@ -659,9 +656,10 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
         OnPropertyChanged(nameof(CanStopOperation));
         try
         {
-            var datasetFile = yolo ? Path.Combine(await Task.Run(() => _store.ExportApprovedCocoAsync(scope)), "annotations.json")
+            scope=DetectionActiveLearningStore.TrainingSnapshot(scope,PredictionMaxBoxes);
+            var datasetFile = yolo ? Path.Combine(await Task.Run(() => _store.ExportTrainingCocoAsync(scope,PredictionMaxBoxes)), "annotations.json")
                 : await ExportHalconSnapshotAsync(scope,cts.Token);
-            Status = combined ? $"HALCON 合并训练 · {scope.Classes.Count} 类 · 仅已确认图像，尚未精度验收。"
+            Status = combined ? $"HALCON 合并训练 · {scope.Classes.Count} 类 · 全部 {scope.Images.Count} 张（含负样本），尚未精度验收。"
                 : "开始小样本检测训练 · 模型仅用于自动预标注，尚未精度验收。";
             var progress = new Progress<string>(ReceiveProgress);
             IReadOnlyList<string> arguments = yolo
@@ -831,7 +829,7 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
         _selectedCategory = null;
         LastExport = "";
         RefreshQueue();
-        Status = $"导入 {session.Images.Count} 张图片，已按预测不确定性排序；仅人工确认的结果可导出。";
+        Status = $"导入 {session.Images.Count} 张图片，已按预测不确定性排序；全部图像可训练和导出 HDICT，无框为负样本。";
     }
 
     private void RefreshQueue(string? selectPath = null)
@@ -869,7 +867,7 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
         OnPropertyChanged(nameof(ClassesInfo));
         OnPropertyChanged(nameof(HasSession));
         OnPropertyChanged(nameof(CanAddImages));
-        OnPropertyChanged(nameof(CanExport));
+        OnPropertyChanged(nameof(CanExport)); OnPropertyChanged(nameof(CanExportHalcon));
         OnPropertyChanged(nameof(CanExportAllHalcon));
         OnPropertyChanged(nameof(CombinedDatasetSummary));
         OnPropertyChanged(nameof(HalconModelSourceDescription));
@@ -915,7 +913,7 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
         Boxes.Add(editor);
         SelectedBox = editor;
         UpdatePreview();
-        Status = "检测框已绘制；确认后点击「确认并下一张」，该图像才会用于训练。";
+        Status = "检测框已绘制，可保存草稿或直接训练；所有图像参与，无框即负样本。";
     }
 
     private void AddBox()
@@ -974,8 +972,8 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
         Status = newStatus switch
         {
             "approved" => "人工确认已保存。该图片会进入COCO导出。",
-            "rework" => "已标记需重标，不会导出成训练真值。",
-            _ => "草稿已保存，尚未确认，不会导出。"
+            "rework" => "已标记需重标；当前框仍参与训练，可修改或清空。",
+            _ => "草稿已保存；训练和 HDICT 导出使用当前框，无框作为负样本。"
         };
     }
 
@@ -1001,7 +999,7 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
             DetectionActiveLearningStore.ReviewBoxes(image, PredictionMaxBoxes).Any(box => box.Confidence < .25));
         var prompt = $"确认「{DatasetName}」的 {candidates.Count:N0} 张有框待审核图片？\n\n" +
             (lowScore > 0 ? $"其中 {lowScore:N0} 张预测得分低于 25%，请先核对框的位置。\n" : "") +
-            "确认后这些框将作为训练标签。无框、无效框和需重标图片会跳过，并保存操作前备份。";
+            "确认仅记录审核状态；训练已使用当前框。无框、无效框和需重标图片会跳过，并保存操作前备份。";
         if (MessageBox.Show(System.Windows.Application.Current.MainWindow, prompt, "全部确认当前类别",
             MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) != MessageBoxResult.Yes)
         { Status = "已取消全部确认，标注状态未改变。"; return; }

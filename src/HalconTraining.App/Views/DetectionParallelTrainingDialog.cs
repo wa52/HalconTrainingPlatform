@@ -31,7 +31,7 @@ public static class DetectionParallelTrainingDialog
         var begin = new Button { Content = "开始并行训练", MinHeight = 36, Margin = new Thickness(0,14,0,0), IsEnabled = false };
         ActionVisual.SetKind(begin,"Parallel");
         footer.Children.Add(begin);
-        var choices = categories.Select(category => new CheckBox { Content = new TextBlock{Text=$"{category.Name} · 已确认 {category.Approved} 张",TextWrapping=TextWrapping.Wrap},
+        var choices = categories.Select(category => new CheckBox { Content = new TextBlock{Text=$"{category.Name} · 全部 {category.Count} 张",TextWrapping=TextWrapping.Wrap},
             Tag = category.Id, IsChecked = category.Id == currentId, Margin = new Thickness(0,7,0,7) }).ToArray();
         foreach (var choice in choices)
         {

@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.Globalization;
 using System.IO;
 using System.Text.Json;
@@ -14,8 +14,8 @@ public sealed partial class DetectionActiveLearningViewModel
     public AsyncCommand ParallelTrainCommand { get; }
     public bool HasParallelJobs => ParallelJobs.Count > 0;
     private IReadOnlyList<DetectionFolderFilter> EligibleParallelCategories => _session is null ? [] :
-        CategoryFilters.Where(category => category.Id is { } id && category.Approved >= BootstrapBatch &&
-            DetectionActiveLearningStore.ReadyForBootstrap(DetectionActiveLearningStore.FolderScope(_session, id))).ToArray();
+        CategoryFilters.Where(category => category.Id is { } id && category.Count>=Math.Max(5,BootstrapBatch)&&
+            DetectionActiveLearningStore.FolderScope(_session,id).Images.Any(i=>DetectionActiveLearningStore.TrainingBoxes(i,PredictionMaxBoxes).Count>0)).ToArray();
     public bool CanParallelTrain => !IsBusy && IsFolderDataset && !HasParameterErrors && ValidTrainingParameters && EligibleParallelCategories.Count >= 2;
     public Task TrainCategoriesAsync(IReadOnlyList<int> classIds, int concurrency = 2) =>
         ExecuteAsync(() => TrainCategoriesCoreAsync(classIds, concurrency));
@@ -27,7 +27,8 @@ public sealed partial class DetectionActiveLearningViewModel
         if (concurrency is < 1 or > 2 || classIds.Count < 2 || classIds.Distinct().Count() != classIds.Count)
             throw new InvalidOperationException("选择至少两个不同类别，同时运行数为 1 或 2。");
         if (classIds.Any(id => !EligibleParallelCategories.Any(category => category.Id == id)))
-            throw new InvalidOperationException("所选类别需各自确认至少 5 张且 Batch 不超过确认数量。");
+            throw new InvalidOperationException("所选类别各自至少需要 5 张图像，Batch 不超过图像数量，不要求已确认。");
+        await SaveCurrentTrainingEditsAsync();
         var epochs = BootstrapEpochs; var batch = BootstrapBatch; var size = BootstrapSize; var rate = BootstrapRate;
         var yolo = TrainingEngine == "YOLO · 预训练";
         var usePreviousModel = ContinuePreviousHalconModel;
@@ -55,7 +56,8 @@ public sealed partial class DetectionActiveLearningViewModel
                 try
                 {
                     token.ThrowIfCancellationRequested();
-                    var datasetFile = yolo ? Path.Combine(await Task.Run(() => _store.ExportApprovedCocoAsync(scope), token),"annotations.json")
+                    scope=DetectionActiveLearningStore.TrainingSnapshot(scope,PredictionMaxBoxes);
+                    var datasetFile = yolo ? Path.Combine(await Task.Run(() => _store.ExportTrainingCocoAsync(scope,PredictionMaxBoxes), token),"annotations.json")
                         : await ExportHalconSnapshotAsync(scope,token);
                     token.ThrowIfCancellationRequested();
                     var baseModel = yolo ? CompatibleParallelModel(scope) : backbone;
