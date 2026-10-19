@@ -29,7 +29,7 @@
 ## Build and validation
 
 ```powershell
-dotnet build .\HalconTrainingPlatform.sln -c Release
+dotnet build .\src\HalconTraining.App\HalconTraining.App.csproj -c Release
 dotnet run --project .\src\HalconTraining.Worker\HalconTraining.Worker.csproj -c Release -- --environment-probe
 dotnet run --project .\src\HalconTraining.App\HalconTraining.App.csproj -c Release
 ```
@@ -38,14 +38,14 @@ Use the project's HALCON 24.11 package `24111.0.0`, .NET 8, and x64. The current
 
 ## UI acceptance standard
 
-- Highest priority: 简洁、有效、清晰. Optimize operation efficiency over visual effects; follow `docs/UI_SIMPLICITY.md`.
+- Highest priority: 简洁、有效、清晰, with functional, visual and interaction quality together. Follow `docs/UI_SIMPLICITY.md` and `docs/UI_UX_STANDARD.md`. Plan layout before coding; record seven-dimension screenshot review, concrete issues and regression evidence in `docs/UI_VISUAL_REVIEW.md`. Do not equate compilation with visual acceptance.
 - Exactly three primary pages: 数据集、训练、模型. Put the current task and truthful environment status in the top status bar.
 - One primary task per screen and one primary action per area. Center dataset browsing and testing on large native image displays.
 - Before training keep image size, Batch, Epoch and learning rate directly visible and editable; keep split ratios/counts and base model visible. During training lock all parameter editing; restore editors on stop/completion.
 - Before training emphasize parameters; during training automatically collapse parameters and emphasize progress/curves; on completion offer the model/test step.
 - Advanced parameters, logs and detailed metrics start collapsed. Explain blocked operations and invalid input immediately.
 - White/light gray, one blue accent, necessary status colors only. No decorative gradients, shadows, icons or card collections.
-- Functional buttons, menus and navigation/expand labels use shared outline icons (`Views/ActionIcon`, `ActionVisual`); names, parameter labels/values and results remain readable text. Do not hide data as though it were an action.
+- Functional controls use shared outline icons (`Views/ActionIcon`, `ActionVisual`); navigation, primary operations and section headers retain necessary labels. File-management actions remain icons with hints. Names, parameter labels/values and results remain readable text. Do not hide data as though it were an action or sacrifice comprehension for minimalism.
 - Chinese functional hints wait 1500 ms on every control, including transitions to adjacent controls, disabled controls, generated controls and owned windows. Global `BetweenShowDelay=0`; retain accessible names, keyboard navigation/shortcuts and selected/disabled states. Apply expander hints to the header, not its editable content.
 - One visible entry per operation and object: no duplicate split refresh/export/navigation buttons. Keep the three page headers as the navigation entry, with Ctrl+1/2/3 as keyboard alternatives.
 - UI changes require native checks at 1120×780 and 1380×920, long names/paths, expanded low-frequency regions, panel widths and mode changes. Inspect real display and tooltip timing; a successful build alone is insufficient. Keep the stable title and desktop launcher; only deploy checked candidates after active work exits.

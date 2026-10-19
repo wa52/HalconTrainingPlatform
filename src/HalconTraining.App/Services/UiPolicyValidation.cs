@@ -67,12 +67,34 @@ internal static class UiPolicyValidation
         try
         {
             Require(window.Title=="HALCON 训练平台","软件名称保持稳定");
+            Require(window.Pages.Items.Cast<TabItem>().All(tab=>tab.HeaderTemplate==(DataTemplate)window.FindResource("IconTabTemplate")),"三页导航使用图标与可见标题");
             foreach(var size in new[]{new Size(1380,920),new Size(1120,780)})
             {
                 window.Width=size.Width;window.Height=size.Height;
+                window.DatasetPages.SelectedIndex=0;
                 for(var page=0;page<3;page++)
                 {
                     vm.SelectedPageIndex=page;await Layout();Audit(window);
+                    if(page==DesktopWorkspaceViewModel.DatasetPage&&!vm.HasDataset)
+                        Require(window.DatasetEmptyState.IsVisible&&window.DatasetEmptyState.ActualHeight<260,"数据集空状态只显示紧凑操作指引");
+                    if(page==DesktopWorkspaceViewModel.ModelsPage&&vm.SelectedResult is null)
+                        Require(window.ModelEmptyState.IsVisible&&window.ModelEmptyState.ActualHeight<280,"模型空状态显示测试指引而非空图像区");
+                    if(page==DesktopWorkspaceViewModel.TrainingPage)
+                    {
+                        var monitor=Walk(window).OfType<TrainingMonitorView>().Single();
+                        Require(monitor.EmptyMonitor.IsVisible&&monitor.MonitorPanel.ActualHeight<360,"空闲监控按内容收缩且给出下一步");
+                        Require(window.StartTrainingButton.ContentTemplate==(DataTemplate)window.FindResource("IconTextActionTemplate"),"主要训练操作保留可见文字");
+                        var oldRate=window.LearningRateInput.Text;
+                        window.LearningRateInput.Text="无效参数";await Layout();
+                        Require(Validation.GetHasError(window.LearningRateInput)&&vm.HasInputErrors&&!vm.CanTrain,"错误参数显示校验反馈并阻止训练");
+                        window.LearningRateInput.Text=oldRate;await Layout();
+                        Require(!Validation.GetHasError(window.LearningRateInput)&&!vm.HasInputErrors,"修改参数后恢复编辑校验状态");
+                        // Presentation-state fixtures only: no worker, metrics or training results are fabricated.
+                        typeof(DesktopWorkspaceViewModel).GetProperty(nameof(vm.IsTraining))!.SetValue(vm,true);await Layout();
+                        Require(!window.CoreParameters.IsVisible&&window.StopTrainingButton.IsVisible&&!monitor.EmptyMonitor.IsVisible,"运行状态锁定参数且显示停止与监控");
+                        typeof(DesktopWorkspaceViewModel).GetProperty(nameof(vm.IsTraining))!.SetValue(vm,false);await Layout();
+                        Require(window.CoreParameters.IsVisible&&window.CoreParameters.IsEnabled&&monitor.EmptyMonitor.IsVisible,"退出运行状态恢复核心参数与空闲监控");
+                    }
                     Capture(window,Path.Combine(output,$"page-{page}-{size.Width}.png"));
                 }
                 vm.SelectedPageIndex=DesktopWorkspaceViewModel.DatasetPage;window.DatasetPages.SelectedIndex=1;await Layout();

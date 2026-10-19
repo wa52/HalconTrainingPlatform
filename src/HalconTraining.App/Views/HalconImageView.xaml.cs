@@ -25,7 +25,7 @@ public partial class HalconImageView : UserControl
         try
         {
             var window=Display.HalconWindow;window.ClearWindow();
-            if(!File.Exists(ImagePath)){Release();Message.Text="选择图像后显示";Message.Visibility=Visibility.Visible;return;}
+            if(!File.Exists(ImagePath)){Release();Message.Text=string.IsNullOrWhiteSpace(ImagePath)?"等待选择图像":"图像文件不存在，请检查来源位置";Message.Visibility=Visibility.Visible;return;}
             if(_loadedPath!=ImagePath||_loadedMask!=MaskPath){Release();_image=new HImage(ImagePath);_loadedPath=ImagePath;_loadedMask=MaskPath;if(File.Exists(MaskPath)){using var mask=new HImage(MaskPath);_region=mask.Threshold(1d,255d);}}
             _image!.GetImageSize(out int width,out int height);
             var aspect=Math.Max(1,Display.ActualWidth)/Math.Max(1,Display.ActualHeight);

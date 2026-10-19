@@ -40,7 +40,7 @@
 首次克隆后，需将已授权 HALCON 安装目录 `HALCONROOT/dl` 中与 `assets/pretrained/catalog.json` 对应的基础模型复制到 `assets/pretrained`。权重文件不随源码上传；分类和语义分割分别需要 `pretrained_dl_classifier_compact.hdl` 与 `pretrained_dl_segmentation_compact.hdl`。配置好 `HALCONROOT`、`HALCONARCH` 和本机许可证后再运行。
 
 ```powershell
-dotnet build .\HalconTrainingPlatform.sln -c Release
+dotnet build .\src\HalconTraining.App\HalconTraining.App.csproj -c Release
 .\src\HalconTraining.App\bin\Release\net8.0-windows\HalconTraining.App.exe
 ```
 
@@ -57,7 +57,9 @@ WPF程序支持显式开发验证参数 `--validate-desktop --validation-output 
 
 UI 的最高标准为“简洁、有效、清晰，以操作效率为第一目标”，具体准则见 [UI_SIMPLICITY.md](docs/UI_SIMPLICITY.md)。
 
-操作、文件管理、导航及展开入口统一为矢量图标，中文提示每次悬停 1.5 秒后出现；移动到另一图标时重新等待。参数和结果保留文字。重复的划分更新、合并导出与导航按钮已合并，长内容可滚动或悬停查看；支持 Ctrl+1/2/3 切换页面、Ctrl+O/Ctrl+Shift+O 选择数据和 Ctrl+S 按当前页面保存。图标、可访问名称、最小/常用尺寸、分栏、长类别和模式切换可通过独立工作区下的 `--validate-ui-policy --validation-output <目录>` 检查；不启动训练。
+操作使用共用矢量图标；三页导航、主要训练/确认/测试操作及折叠分区保留必要中文标题，文件管理与次级工具使用图标。中文提示每次悬停 1.5 秒后出现，移动到另一图标时重新等待。参数和结果保留文字。重复的划分更新、合并导出与导航按钮已合并，长内容可滚动或悬停查看；支持 Ctrl+1/2/3 切换页面、Ctrl+O/Ctrl+Shift+O 选择数据和 Ctrl+S 按当前页面保存。空数据集、空模型测试与空闲监控提供紧凑的下一步指引，有数据后恢复图像和实际监控区域。
+
+通用设计标准见 [UI_UX_STANDARD.md](docs/UI_UX_STANDARD.md)，设计分析、自评与真实验证范围见 [UI_VISUAL_REVIEW.md](docs/UI_VISUAL_REVIEW.md)。图标、可访问名称、最小/常用尺寸、参数错误反馈、显示状态切换、分栏、长类别和模式切换可通过独立工作区下的 `--validate-ui-policy --validation-output <目录>` 检查；该验证不启动训练，运行状态属于显示层测试条件，不是新的 GPU 训练证据。仅显式 `--review-ui` 审查模式将窗口置前；普通启动不改变窗口置顶行为。
 
 目标检测标注完成后，顶部「导出 .hdict」合并所有类别已确认图像；「合并 HALCON 训练」导出后训练一个多类别模型。未确认、仅预测、草稿及需重标图像不会进入训练。详情见 [目标检测流程](docs/ACTIVE_LEARNING_DETECTION.md)。
 

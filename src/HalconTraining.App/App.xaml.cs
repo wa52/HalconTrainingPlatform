@@ -47,6 +47,8 @@ public partial class App : System.Windows.Application
         window.Loaded+=async(_,_)=>
         {
             await viewModel.InitializeAsync();
+            // Explicit isolated visual-review mode only; normal windows never become topmost.
+            if(e.Args.Contains("--review-ui"))window.Topmost=true;
             if(e.Args.Contains("--validate-ui-policy"))
             {
                 var outputIndex=Array.IndexOf(e.Args,"--validation-output");

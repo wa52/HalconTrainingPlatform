@@ -80,7 +80,7 @@ public static class ActionVisual
         BindingOperations.SetBinding(element,FrameworkElement.ToolTipProperty,help);
         BindingOperations.SetBinding(element,AutomationProperties.HelpTextProperty,help);
         BindingOperations.SetBinding(element,AutomationProperties.AcceleratorKeyProperty,new Binding{Source=element,Path=new PropertyPath(ShortcutProperty)});
-        var key=element switch{Expander=>GetKeepText(element)?"IconDataHeaderTemplate":"IconExpanderTemplate",TabItem=>"IconTabTemplate",_=>"IconActionTemplate"};
+        var key=element switch{Expander=>"IconDataHeaderTemplate",TabItem=>"IconTabTemplate",_=>GetKeepText(element)?"IconTextActionTemplate":"IconActionTemplate"};
         if(header)((HeaderedContentControl)element).HeaderTemplate=(DataTemplate)element.FindResource(key);
         else if(element is ContentControl content)content.ContentTemplate=(DataTemplate)element.FindResource(key);
         if(element is Button button)
