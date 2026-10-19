@@ -105,6 +105,8 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
         AddImagesCommand = new AsyncCommand(_ => ExecuteAsync(AddImagesAsync));
         BootstrapCommand = new AsyncCommand(_ => TrainCurrentCategoryAsync());
         CombinedTrainCommand = new AsyncCommand(_ => TrainCombinedCategoriesAsync());
+        SelectInitialModelCommand = new RelayCommand(_ => SelectInitialModel());
+        ClearInitialModelCommand = new RelayCommand(_ => { if(IsBusy)return; _initialModelFile = null; ContinuePreviousHalconModel=true; OnPropertyChanged(nameof(HalconModelSourceDescription)); });
         ParallelTrainCommand = new AsyncCommand(async _ =>
         {
             if (!CanParallelTrain) { Status = "至少两个类别分别确认 5 张且训练参数有效后可并行训练。"; return; }
@@ -148,6 +150,34 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
     public AsyncCommand AddImagesCommand { get; }
     public AsyncCommand BootstrapCommand { get; }
     public AsyncCommand CombinedTrainCommand { get; }
+    public RelayCommand SelectInitialModelCommand { get; }
+    public RelayCommand ClearInitialModelCommand { get; }
+    private bool _continuePreviousHalconModel = true;
+    private string? _initialModelFile;
+    public bool ContinuePreviousHalconModel
+    {
+        get => _continuePreviousHalconModel;
+        set { if (IsBusy) return; if (SetProperty(ref _continuePreviousHalconModel, value)) OnPropertyChanged(nameof(HalconModelSourceDescription)); }
+    }
+    public string HalconModelSourceDescription
+    {
+        get
+        {
+            if (_session is null) return "HALCON 合并训练：选择并确认数据后自动匹配模型。";
+            try { return HalconDetectionModelSource.Resolve(DetectionActiveLearningStore.CombinedApprovedScope(_session), BootstrapSize,
+                ContinuePreviousHalconModel, ContinuePreviousHalconModel ? _initialModelFile : null).Description; }
+            catch (Exception error) when(error is InvalidDataException or InvalidOperationException) { return error.Message; }
+        }
+    }
+    private void SelectInitialModel()
+    {
+        if (IsBusy) return;
+        var dialog = new OpenFileDialog { Title = "选择合并检测续训权重（可选中断任务的 model.hdl）", Filter = "HALCON 模型|*.hdl" };
+        if (dialog.ShowDialog() != true) return;
+        _initialModelFile = dialog.FileName;
+        ContinuePreviousHalconModel = true;
+        OnPropertyChanged(nameof(HalconModelSourceDescription));
+    }
     public bool CanCombinedTrain => !IsBusy && !HasParameterErrors && ValidTrainingParameters && _session?.Images.Count(i=>i.Status=="approved")>=Math.Max(5,BootstrapBatch);
     public AsyncCommand PredictExistingCommand { get; }
     public AsyncCommand PredictTrainedCommand { get; }
@@ -316,7 +346,7 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
     public int BootstrapBatch { get => _bootstrapBatch; set { SetProperty(ref _bootstrapBatch, value); NotifyTrainingParameters(); } }
     public int BootstrapSize { get => _bootstrapSize; set { SetProperty(ref _bootstrapSize, value); NotifyTrainingParameters(); } }
     public double BootstrapRate { get => _bootstrapRate; set { SetProperty(ref _bootstrapRate, value); NotifyTrainingParameters(); } }
-    private void NotifyTrainingParameters() { OnPropertyChanged(nameof(CanBootstrap)); OnPropertyChanged(nameof(CanCombinedTrain)); OnPropertyChanged(nameof(CanParallelTrain)); OnPropertyChanged(nameof(TrainingEligibility)); }
+    private void NotifyTrainingParameters() { OnPropertyChanged(nameof(CanBootstrap)); OnPropertyChanged(nameof(CanCombinedTrain)); OnPropertyChanged(nameof(CanParallelTrain)); OnPropertyChanged(nameof(TrainingEligibility)); OnPropertyChanged(nameof(HalconModelSourceDescription)); }
     public bool CanRemoveBox => CanReview && SelectedBox is not null;
     public bool CanExport => !IsBusy && TrainingSession?.Images.Any(image => image.Status == "approved") == true;
     public bool CanOpenExport => Directory.Exists(LastExport);
@@ -468,7 +498,8 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
             OperationProgress = _operationTotal > 0 ? Math.Clamp(current * 95.0 / _operationTotal, 0, 95) : 0;
             OperationHeadline = _operationKind == "训练" ? $"训练中 · Epoch {current}/{_operationTotal}" : $"预测中 · {current}/{_operationTotal}";
         }
-        OperationDetail = $"{OperationDatasetName}" + (message.Loss is { } loss ? $" · Loss {loss:F5}" : "") + " · " + OperationElapsedText;
+        OperationDetail = $"{OperationDatasetName}" + (message.Loss is { } loss ? $" · Loss {loss:F5}" : "") +
+            (message.ImagesPerSecond is { } speed ? $" · {speed:F1} 张/秒" : "") + " · " + OperationElapsedText;
         Status = OperationHeadline + " · " + OperationDetail;
         OnPropertyChanged(nameof(TrainingEligibility));
     }
@@ -510,6 +541,7 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
             Status = "正在读取文件夹和图片尺寸…";
             var progress = new Progress<string>(message => Status = message);
             _session = await Task.Run(() => _store.ImportFolderAsync(folder, DetectionSeedDialogs.ReadImageSize, _session, progress, cts.Token));
+            _initialModelFile = null;
             _trainedModel = _session.LastTrainedModelPath;
             LastExport = "";
             _selectedCategory = null;
@@ -540,6 +572,7 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
         var classes = DetectionSeedDialogs.EnterClasses();
         if (classes is null) return;
         _session = await _store.CreateSeedAsync(images, classes);
+        _initialModelFile = null;
         _trainedModel = null;
         LastExport = "";
         OnPropertyChanged(nameof(TrainedModel));
@@ -600,8 +633,10 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
             throw new InvalidOperationException("训练参数无效：尺寸≥64且为32的倍数，Batch/Epoch/学习率需大于0。");
         var yolo = !combined && TrainingEngine == "YOLO · 预训练";
         var yoloBase = yolo ? ResolveYoloBaseModel() : "";
+        var modelSource = yolo ? null : HalconDetectionModelSource.Resolve(scope, BootstrapSize,
+            ContinuePreviousHalconModel, combined && ContinuePreviousHalconModel ? _initialModelFile : null);
         var backbone = Path.Combine(_workspaceRoot, "assets", "pretrained", "pretrained_dl_classifier_compact.hdl");
-        if (!yolo && !File.Exists(backbone))
+        if (!yolo && modelSource!.InitialModelFile is null && !File.Exists(backbone))
             throw new FileNotFoundException("找不到 HALCON compact 检测骨干基础模型。", backbone);
         ParallelJobs.Clear(); OnPropertyChanged(nameof(HasParallelJobs));
         _trainingScopeName = combined ? $"{scope.DatasetName} · 合并 {scope.Classes.Count} 类 · {scope.Images.Count(i=>i.Status=="approved"):N0} 张已确认" : scope.DatasetName;
@@ -635,8 +670,10 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
                    "--width", BootstrapSize.ToString(CultureInfo.InvariantCulture),
                    "--height", BootstrapSize.ToString(CultureInfo.InvariantCulture),
                    "--rate", BootstrapRate.ToString(CultureInfo.InvariantCulture)];
+            if (modelSource?.InitialModelFile is { } initialModel) arguments = [..arguments, "--initial-model", initialModel];
+            OperationDetail = modelSource?.Description ?? "YOLO 预标注训练";
             var result = await (yolo ? _yoloRunner : _runner).RunAsync(arguments, progress, cts.Token);
-            await File.WriteAllTextAsync(Path.Combine(output, "training.log"), result.Output + Environment.NewLine + result.Error);
+            await File.WriteAllTextAsync(Path.Combine(output, "worker.log"), result.Output + Environment.NewLine + result.Error);
             if (result.ExitCode != 0) throw new InvalidOperationException(result.Error);
             var newModel = Path.Combine(output, yolo ? "model.pt" : "model.hdl");
             if (!File.Exists(newModel)) throw new FileNotFoundException("训练进程未产生模型文件。", newModel);
@@ -645,6 +682,7 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
             else if (IsFolderDataset && SelectedCategory?.Id is { } categoryId) _session!.FolderModels[categoryId] = newModel;
             else _session!.LastTrainedModelPath = _trainedModel;
             await _store.SaveAsync(_session);
+            OnPropertyChanged(nameof(HalconModelSourceDescription));
             OnPropertyChanged(nameof(TrainedModel));
             OnPropertyChanged(nameof(CanPredictTrained));
             OnPropertyChanged(nameof(HasTrainedModel));
@@ -656,8 +694,10 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
         {
             await File.WriteAllTextAsync(Path.Combine(output, "job.json"),
                 JsonSerializer.Serialize(new { status = "interrupted", message = "人工停止训练，模型未发布。" }));
-            FinishOperation("训练已停止", "已保留标注和上次模型。", false);
-            Status = "初始训练已停止，未产生可用的新模型。";
+            var stoppedDetail = !yolo && File.Exists(Path.Combine(output,"checkpoint.json"))
+                ? "已保留完整轮次检查点，可在更多操作中选择 model.hdl 继续微调。" : "已保留标注和上次模型。";
+            FinishOperation("训练已停止", stoppedDetail, false);
+            Status = stoppedDetail;
         }
         catch (Exception error)
         {
@@ -778,6 +818,7 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
         if (dialog.ShowDialog() != true) return;
         var session = await _store.ImportAsync(dialog.FileName);
         _session = session;
+        _initialModelFile = null;
         _trainedModel = session.LastTrainedModelPath;
         _selectedCategory = null;
         LastExport = "";
@@ -823,6 +864,7 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
         OnPropertyChanged(nameof(CanExport));
         OnPropertyChanged(nameof(CanExportAllHalcon));
         OnPropertyChanged(nameof(CombinedDatasetSummary));
+        OnPropertyChanged(nameof(HalconModelSourceDescription));
         OnPropertyChanged(nameof(CanBootstrap)); OnPropertyChanged(nameof(CanCombinedTrain));
         OnPropertyChanged(nameof(TrainingEligibility));
         foreach (var property in new[] { nameof(Categories), nameof(DatasetName), nameof(SourceDirectory), nameof(ImportIssues),

@@ -13,6 +13,7 @@
     <Compile Include="../../src/HalconTraining.App/Services/DetectionBoxGesture.cs" Link="DetectionBoxGesture.cs" />
     <Compile Include="../../src/HalconTraining.App/Services/YoloProcessRunner.cs" Link="YoloProcessRunner.cs" />
     <Compile Include="../../src/HalconTraining.App/Services/DetectionProgressMessage.cs" Link="DetectionProgressMessage.cs" />
+    <Compile Include="../../src/HalconTraining.App/Services/HalconDetectionModelSource.cs" Link="HalconDetectionModelSource.cs" />
     <Content Include="../fixtures/yolo_progress_probe.py" Link="worker/yolo_active_learning.py" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

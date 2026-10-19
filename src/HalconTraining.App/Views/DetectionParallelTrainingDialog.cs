@@ -11,7 +11,15 @@ public static class DetectionParallelTrainingDialog
     public static DetectionParallelSelection? Select(IReadOnlyList<DetectionFolderFilter> categories, int? currentId,
         int epochs, int batch, int imageSize)
     {
-        var window = new Window { Title = "并行训练类别", Width = 440, Height = 480,
+        var (window,choices,concurrency)=Create(categories,currentId,epochs,batch,imageSize);
+        return window.ShowDialog() == true
+            ? new DetectionParallelSelection(choices.Where(item => item.IsChecked == true).Select(item => (int)item.Tag).ToArray(), (int)concurrency.SelectedItem)
+            : null;
+    }
+
+    internal static (Window Window,CheckBox[] Choices,ComboBox Concurrency) Create(IReadOnlyList<DetectionFolderFilter> categories,int? currentId,int epochs,int batch,int imageSize)
+    {
+        var window = new Window { Title = "并行训练类别", Width = 440, Height = 480,MinWidth=360,MinHeight=360,
             WindowStartupLocation = WindowStartupLocation.CenterOwner, Owner = System.Windows.Application.Current.MainWindow };
         var layout = new DockPanel { Margin = new Thickness(20) };
         var heading = new TextBlock { Text = $"选择至少两个类别，使用当前参数：\n{imageSize} × {imageSize} · Batch {batch} · {epochs} Epoch\n每个类别独立生成训练快照和模型。", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,0,0,14) };
@@ -21,8 +29,9 @@ public static class DetectionParallelTrainingDialog
         var concurrency = new ComboBox { ItemsSource = new[] { 2, 1 }, SelectedIndex = 0, MinHeight = 30 };
         footer.Children.Add(concurrency);
         var begin = new Button { Content = "开始并行训练", MinHeight = 36, Margin = new Thickness(0,14,0,0), IsEnabled = false };
+        ActionVisual.SetKind(begin,"Parallel");
         footer.Children.Add(begin);
-        var choices = categories.Select(category => new CheckBox { Content = $"{category.Name} · 已确认 {category.Approved} 张",
+        var choices = categories.Select(category => new CheckBox { Content = new TextBlock{Text=$"{category.Name} · 已确认 {category.Approved} 张",TextWrapping=TextWrapping.Wrap},
             Tag = category.Id, IsChecked = category.Id == currentId, Margin = new Thickness(0,7,0,7) }).ToArray();
         foreach (var choice in choices)
         {
@@ -32,8 +41,6 @@ public static class DetectionParallelTrainingDialog
         var list = new StackPanel(); foreach (var choice in choices) list.Children.Add(choice);
         layout.Children.Add(new ScrollViewer { Content = list, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
         begin.Click += (_,_) => window.DialogResult = true; window.Content = layout;
-        return window.ShowDialog() == true
-            ? new DetectionParallelSelection(choices.Where(item => item.IsChecked == true).Select(item => (int)item.Tag).ToArray(), (int)concurrency.SelectedItem)
-            : null;
+        return (window,choices,concurrency);
     }
 }

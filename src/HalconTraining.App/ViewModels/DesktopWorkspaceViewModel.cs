@@ -8,6 +8,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using HalconTraining.Application.Workspace;
 using HalconTraining.Application.Workers;
+using HalconTraining.Application.Environment;
 using HalconTraining.App.Services;
 using HalconTraining.App.Views;
 
@@ -48,9 +49,10 @@ public sealed class DesktopWorkspaceViewModel : ObservableModel, IDisposable
     private readonly List<TrainingPoint> _validationPoints=[];
     private readonly Queue<double> _iterationTimes=[];
     private IReadOnlyList<TrainingPoint> _trainingCurve=[],_validationCurve=[];
-    public DesktopWorkspaceViewModel(TrainingWorkspace workspace,IWorkspaceDialogs dialogs,ITrainingWorkerClient environment)
+    public DesktopWorkspaceViewModel(TrainingWorkspace workspace,IWorkspaceDialogs dialogs,ITrainingWorkerClient environment,IGpuTelemetry gpuTelemetry)
     {
         _workspace=workspace;_dialogs=dialogs;_environment=environment;
+        Gpu=new GpuStatusViewModel(gpuTelemetry);
         ActiveLearning=new DetectionActiveLearningViewModel(workspace.Store.Root, new HalconProcessRunner(), new YoloProcessRunner(), () => IsBusy);
         ActiveLearning.PropertyChanged += (_, e) =>
         {
@@ -115,6 +117,7 @@ public sealed class DesktopWorkspaceViewModel : ObservableModel, IDisposable
     public string? TrainingTruthMask {get=>_trainingTruth;private set=>SetProperty(ref _trainingTruth,value);}
     public int ValidationInterval {get=>_validationInterval;set{SetProperty(ref _validationInterval,value);NotifyState();}}
     public DetectionActiveLearningViewModel ActiveLearning {get;}
+    public GpuStatusViewModel Gpu {get;}
     public bool HasActiveOperations=>IsBusy||ActiveLearning.IsBusy;
     public string Root=>_workspace.Store.Root;
     public int SelectedPageIndex {get=>_page;set{SetProperty(ref _page,value);NotifyCurrentWorkspace();}}
@@ -236,6 +239,7 @@ public sealed class DesktopWorkspaceViewModel : ObservableModel, IDisposable
     public string ResultSummary=>SelectedResult is null?"直接选择原图，无需测试字典或人工标注。":SelectedResult.Task=="classification"?$"{SelectedResult.File} · 预测：{SelectedResult.ClassName} · 置信度 {SelectedResult.Confidence:P2} · 推理 {SelectedResult.InferenceMs:F1} ms":$"{SelectedResult.File} · {SelectedResult.Width} × {SelectedResult.Height} · 推理 {SelectedResult.InferenceMs:F1} ms · 前景 {SelectedResult.Areas.Where(a=>a.ClassId!=0).Sum(a=>a.Ratio):P2}";
     public async Task InitializeAsync()
     {
+        Gpu.Start();
         await ActiveLearning.InitializeAsync();
         await SafeAsync(async()=>
         {
@@ -404,5 +408,5 @@ public sealed class DesktopWorkspaceViewModel : ObservableModel, IDisposable
     private static string Label(string task)=>task switch {"semantic"=>"语义分割","detection"=>"目标检测 · 水平框","rotated"=>"目标检测 · 旋转框","instance"=>"实例分割","classification"=>"图像分类","multi"=>"多标签分类","anomaly"=>"异常检测","ocr"=>"OCR · 需确认组件",_=>"无法识别任务"};
     public void RequestStop()=>_operation?.Cancel();
     public async Task StopAndWaitAsync(){_lifetime.Cancel();_operation?.Cancel();await ActiveLearning.StopAndWaitAsync();while(IsBusy)await Task.Delay(50);}
-    public void Dispose(){_clock.Stop();_lifetime.Cancel();_lifetime.Dispose();}
+    public void Dispose(){Gpu.Dispose();_clock.Stop();_lifetime.Cancel();_lifetime.Dispose();}
 }

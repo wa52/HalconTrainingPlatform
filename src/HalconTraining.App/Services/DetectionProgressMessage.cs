@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace HalconTraining.App.Services;
 
-public sealed record DetectionProgressMessage(string Stage, int? Current, int? Total, double? Loss)
+public sealed record DetectionProgressMessage(string Stage, int? Current, int? Total, double? Loss, double? ImagesPerSecond = null)
 {
     public static DetectionProgressMessage? Parse(string line)
     {
@@ -16,7 +16,8 @@ public sealed record DetectionProgressMessage(string Stage, int? Current, int? T
             double? loss = null;
             foreach (var name in new[] { "loss", "meanLoss", "trainingLoss" })
                 if (detail.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var number) && double.IsFinite(number)) { loss = number; break; }
-            return new(stage.GetString() ?? "", ReadInt("epoch") ?? ReadInt("processed"), ReadInt("epochs") ?? ReadInt("total"), loss);
+            double? speed = detail.TryGetProperty("imagesPerSecond",out var fps) && fps.ValueKind == JsonValueKind.Number && fps.TryGetDouble(out var rate) && double.IsFinite(rate) && rate > 0 ? rate : null;
+            return new(stage.GetString() ?? "", ReadInt("epoch") ?? ReadInt("processed"), ReadInt("epochs") ?? ReadInt("total"), loss, speed);
         }
         catch (JsonException) { return null; }
     }

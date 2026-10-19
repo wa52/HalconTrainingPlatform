@@ -1,11 +1,11 @@
 <UserControl x:Class="HalconTraining.App.Views.DetectionImageView"
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
- xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:ui="clr-namespace:HalconTraining.App.Views"
  xmlns:h="clr-namespace:HalconDotNet;assembly=MVTec.HalconDotNet-Windows">
  <Grid Background="#18232C" MinHeight="200">
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
   <DockPanel Background="White" Margin="0,0,0,6">
-   <Button DockPanel.Dock="Right" Content="适应窗口" Padding="8,3" MinHeight="26" Click="FitClicked"/>
+   <Button ui:ActionVisual.Kind="Fit" DockPanel.Dock="Right" Content="适应窗口" Padding="8,3" MinHeight="26" Click="FitClicked"/>
    <TextBlock Text="框内移动 · 边角调整 · 空白处画框（Shift 可重叠）" FontSize="12" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" ToolTip="左键拖动框内移动，边角调整大小；Shift+拖动强制新建框。滚轮缩放，右键平移，Esc取消本次操作。"/>
   </DockPanel>
   <Grid Grid.Row="1" ClipToBounds="True">

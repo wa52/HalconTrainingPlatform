@@ -161,9 +161,10 @@ public partial class DetectionImageView : UserControl
         if (InputCanvas is null) return;
         InputCanvas.Children.Clear();
         if (_image is null) return;
+        DrawLabels();
         var selected = SelectedBoxIndex >= 0 && SelectedBoxIndex < (Boxes?.Count ?? 0) ? Boxes![SelectedBoxIndex] : null;
         var box = _gesture.IsActive ? _gesture.Preview : selected;
-        if (box is null) return;
+        if (box is null || !CanDrawBox(box)) return;
         var first = ToCanvas(box.Col1, box.Row1); var last = ToCanvas(box.Col2, box.Row2);
         var rectangle = new Rectangle { Width = Math.Max(0, last.X - first.X), Height = Math.Max(0, last.Y - first.Y),
             Stroke = Brushes.Gold, StrokeThickness = 2, Fill = new SolidColorBrush(Color.FromArgb(24, 255, 210, 80)), IsHitTestVisible = false };
@@ -178,12 +179,52 @@ public partial class DetectionImageView : UserControl
         }
     }
 
+    public IReadOnlyList<Rect> LabelBounds {get;private set;}=[];
+    private bool CanDrawBox(DetectionBox box)=>double.IsFinite(box.Col1)&&double.IsFinite(box.Row1)&&
+        double.IsFinite(box.Col2)&&double.IsFinite(box.Row2)&&box.Col1>=0&&box.Row1>=0&&
+        box.Col2>box.Col1&&box.Row2>box.Row1&&box.Col2<=_originalWidth&&box.Row2<=_originalHeight;
+    private void DrawLabels()
+    {
+        var bounds=new List<Rect>();
+        var width=InputCanvas.ActualWidth;var height=InputCanvas.ActualHeight;
+        if(width<40||height<24){LabelBounds=bounds;return;}
+        var boxes=Boxes??[];
+        for(var index=0;index<boxes.Count;index++)
+        {
+            var box=_gesture.IsActive&&_gesture.Index==index?_gesture.Preview:boxes[index];
+            if(box is null||!CanDrawBox(box))continue;
+            var start=ToCanvas(box.Col1,box.Row1);var end=ToCanvas(box.Col2,box.Row2);
+            if(end.X<0||end.Y<0||start.X>width||start.Y>height)continue;
+            var name=Categories?.FirstOrDefault(c=>c.Id==box.ClassId)?.Name??$"类别 {box.ClassId}";
+            var text=new TextBlock{Text=$"{index+1} · {name}"+(box.Confidence>0?$" · {box.Confidence:P0}":""),
+                Foreground=Brushes.Cyan,FontSize=12,TextTrimming=TextTrimming.CharacterEllipsis,MaxWidth=Math.Min(260,width-8),Padding=new Thickness(4,2,4,2)};
+            text.Measure(new Size(text.MaxWidth,30));
+            var size=text.DesiredSize;
+            var x=Math.Clamp(start.X,2,Math.Max(2,width-size.Width-2));
+            Rect? placement=null;
+            // Prefer the space beside this box; pack into free lanes only when necessary.
+            var candidates=new[]{start.Y-size.Height-2,end.Y+2,start.Y+2}
+                .Concat(Enumerable.Range(0,Math.Max(1,(int)(height/(size.Height+3)))).Select(i=>2+i*(size.Height+3)));
+            foreach(var y in candidates)
+            {
+                var rect=new Rect(x,Math.Clamp(y,2,Math.Max(2,height-size.Height-2)),size.Width,size.Height);
+                if(bounds.All(other=>!other.IntersectsWith(rect))){placement=rect;break;}
+            }
+            // Dense labels remain available in the coordinate table instead of overlapping.
+            if(placement is not { } chosen)continue;
+            var label=new Border{Child=text,Background=new SolidColorBrush(Color.FromArgb(220,24,35,44)),IsHitTestVisible=false};
+            Canvas.SetLeft(label,chosen.X);Canvas.SetTop(label,chosen.Y);InputCanvas.Children.Add(label);bounds.Add(chosen);
+        }
+        LabelBounds=bounds;
+    }
+
     private void Release()
     {
         _gesture.Cancel(); _panStart = null;
         if (InputCanvas.IsMouseCaptured) InputCanvas.ReleaseMouseCapture();
         _image?.Dispose(); _image = null; _loadedPath = null; _fitNeeded = true;
         InputCanvas.Children.Clear();
+        LabelBounds=[];
     }
 
     private void Render()
@@ -216,12 +257,9 @@ public partial class DetectionImageView : UserControl
             {
                 if (_gesture.IsActive && _gesture.Index == index) continue;
                 var box = boxes[index];
-                if (!double.IsFinite(box.Col1) || !double.IsFinite(box.Col2) || !double.IsFinite(box.Row1) || !double.IsFinite(box.Row2) ||
-                    box.Col1 < 0 || box.Row1 < 0 || box.Col2 <= box.Col1 || box.Row2 <= box.Row1) continue;
+                if (!CanDrawBox(box)) continue;
                 using var rectangle = new HRegion(); rectangle.GenRectangle1(box.Row1, box.Col1, box.Row2, box.Col2);
                 window.DispRegion(rectangle);
-                var label = Categories?.FirstOrDefault(category => category.Id == box.ClassId)?.Name ?? $"类别 {box.ClassId}";
-                window.DispText(box.Confidence > 0 ? $"{label} · {box.Confidence:P0}" : label, "image", Math.Max(0, box.Row1 - 18), box.Col1, "cyan", new HTuple(), new HTuple());
             }
             Message.Visibility = Visibility.Collapsed; DrawAdornments();
         }

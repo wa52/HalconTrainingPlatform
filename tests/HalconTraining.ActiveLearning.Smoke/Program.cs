@@ -12,6 +12,35 @@ try
     await File.WriteAllBytesAsync(imageA, [137, 80, 78, 71]); // No imaging dependency in store tests.
     await File.WriteAllBytesAsync(imageB, [137, 80, 78, 71]);
     await File.WriteAllBytesAsync(imageC, [137, 80, 78, 71]);
+    var modelDirectory = Path.Combine(root, "previous-model");
+    Directory.CreateDirectory(modelDirectory);
+    var priorModel = Path.Combine(modelDirectory,"model.hdl");
+    await File.WriteAllTextAsync(priorModel,"metadata-only test fixture");
+    var modelScope = new DetectionReviewSession { Classes = [new(5,"P1"),new(6,"P2")], LastTrainedModelPath=priorModel };
+    var modelManifest = Path.Combine(modelDirectory,"manifest.json");
+    await File.WriteAllTextAsync(modelManifest,JsonSerializer.Serialize(new {task="detection",width=256,height=256,classIds=new[]{5,6},classNames=new[]{"P1","P2"}}));
+    Require(HalconDetectionModelSource.Resolve(modelScope,256,true).InitialModelFile==priorModel,"Compatible HALCON weights reused");
+    Require(HalconDetectionModelSource.Resolve(modelScope,256,false).InitialModelFile is null,"User can force a fresh backbone");
+    Require(HalconDetectionModelSource.Resolve(modelScope,512,true).InitialModelFile is null,"Resize never silently reuses a detector");
+    modelScope.Classes=[new(5,"P2"),new(6,"P1")];
+    Require(HalconDetectionModelSource.Resolve(modelScope,256,true).InitialModelFile is null,"Changed names reject same IDs");
+    modelScope.Classes=[new(6,"P2"),new(5,"P1")];
+    Require(HalconDetectionModelSource.Resolve(modelScope,256,true).InitialModelFile is null,"Changed class order rejects model");
+    modelScope.Classes=[new(5,"P1"),new(6,"P2")];
+    await File.WriteAllTextAsync(modelManifest,"broken json");
+    Require(HalconDetectionModelSource.Resolve(modelScope,256,true).InitialModelFile is null,"Corrupt manifest falls back explicitly");
+    Require(HalconDetectionModelSource.Resolve(modelScope,256,true,priorModel).InitialModelFile==priorModel,"Explicit checkpoint needs no completed manifest; native worker validates it");
+    File.Delete(modelManifest);
+    Require(HalconDetectionModelSource.Resolve(modelScope,256,true).InitialModelFile is null,"Incomplete checkpoint is never automatically selected");
+    modelScope.LastTrainedModelPath=Path.ChangeExtension(priorModel,"pt");
+    await File.WriteAllTextAsync(modelScope.LastTrainedModelPath,"YOLO test fixture");
+    Require(HalconDetectionModelSource.Resolve(modelScope,256,true).InitialModelFile is null,"YOLO weights cannot become HALCON weights");
+    var rejectedSource=false;
+    try { HalconDetectionModelSource.Resolve(modelScope,256,true,modelScope.LastTrainedModelPath); }
+    catch(InvalidDataException) {rejectedSource=true;}
+    Require(rejectedSource,"Explicit non-HALCON source is rejected");
+    Require(DetectionProgressMessage.Parse("{\"stage\":\"训练\",\"detail\":{\"epoch\":1,\"epochs\":3,\"imagesPerSecond\":6.4}}") is {ImagesPerSecond:6.4},"Measured throughput reaches progress DTO");
+    Require(DetectionProgressMessage.Parse("{\"stage\":\"训练\",\"detail\":{\"imagesPerSecond\":\"unknown\"}}") is {ImagesPerSecond:null},"Unknown throughput is not fabricated");
     var predictions = new DetectionPredictionFile
     {
         ModelId = "smoke-detector-v1",

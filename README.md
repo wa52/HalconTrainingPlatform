@@ -12,7 +12,7 @@
 - 原图批量测试与坏图隔离，`HSmartWindowControlWPF`原生彩色显示、青色预测叠加、透明度调节和原尺寸PNG保存。测试结果保存在 `results/tests`，重启后按模型恢复历史。
 - 工作区单实例、关闭时回收Worker。运行环境通过HALCONROOT/HALCONARCH和许可证配置；可用HALCON_TRAINING_HOME指定工作区。
 
-真实训练/测试已验收的任务为**图像分类和语义分割**。分类监控显示验证准确率，原图测试显示预测类别和全类别置信度；独立报告包含混淆矩阵和每类召回率。目标检测、实例分割、OCR和异常任务可读取/识别及匹配基础模型，尚未接通完整训练适配器，界面不冒充可执行。
+图像分类和语义分割已完成真实训练/测试流程验收。分类监控显示验证准确率，原图测试显示预测类别和全类别置信度；独立报告包含混淆矩阵和每类召回率。目标检测已接入下述文件夹标注、已确认数据合并训练和原图预标注流程，尚未完成独立 mAP 验收；实例分割、OCR和异常任务可读取/识别及匹配基础模型，尚未接通完整训练适配器。
 
 ## 目标检测主动学习（审核/数据准备）
 
@@ -22,7 +22,7 @@
 
 数据集页新增「目标检测 · 主动学习」：**无模型时**标注任意数量图片，**人工确认满5张且每类别有有效检测框**即可使用YOLO26n预训练权重进行探索性微调；训练得到未验收检测模型，可直接对新图片批量预标注。**已有检测模型时**选择YOLO `.pt` 或带有匹配 `preprocess.hdict` 的HALCON `.hdl` 并多选图片，直接批量预测，无需手写 JSON。审核队列按置信度、类别得分差及工件/批次排序，支持修改/添加/删除框、恢复审核会话，只将人工确认标签导出为 COCO。详见 [docs/ACTIVE_LEARNING_DETECTION.md](docs/ACTIVE_LEARNING_DETECTION.md)。
 
-**边界**：已接入YOLO独立Python训练/预测Worker及HALCON检测Worker，**仅提供探索性bootstrap**，未通过 Windows HALCON+GPU 实机验收、独立 mAP 与正式模型质量验收。不能把它视为完整的生产级目标检测训练适配器；原本的分类/语义分割独立验收与模型发布流程仍保持不变。可用 `dotnet run --project tests/HalconTraining.ActiveLearning.Smoke` 运行无 HALCON 的数据层验证。
+**边界**：已接入YOLO独立Python训练/预测Worker及HALCON检测Worker，已完成本机 HALCON+GPU 真实检测训练和原图预测冒烟检查；独立 mAP、正式模型质量及 HALCON 并发 GPU 训练仍待验收。结果可用于人工预标注，不能直接用于生产判定；原本的分类/语义分割独立验收与模型发布流程保持不变。可用 `dotnet run --project tests/HalconTraining.ActiveLearning.Smoke` 运行无 HALCON 的数据层验证。
 
 ## 架构
 
@@ -57,4 +57,12 @@ WPF程序支持显式开发验证参数 `--validate-desktop --validation-output 
 
 UI 的最高标准为“简洁、有效、清晰，以操作效率为第一目标”，具体准则见 [UI_SIMPLICITY.md](docs/UI_SIMPLICITY.md)。
 
+操作、文件管理、导航及展开入口统一为矢量图标，中文提示每次悬停 1.5 秒后出现；移动到另一图标时重新等待。参数和结果保留文字。重复的划分更新、合并导出与导航按钮已合并，长内容可滚动或悬停查看；支持 Ctrl+1/2/3 切换页面、Ctrl+O/Ctrl+Shift+O 选择数据和 Ctrl+S 按当前页面保存。图标、可访问名称、最小/常用尺寸、分栏、长类别和模式切换可通过独立工作区下的 `--validate-ui-policy --validation-output <目录>` 检查；不启动训练。
+
 目标检测标注完成后，顶部「导出 .hdict」合并所有类别已确认图像；「合并 HALCON 训练」导出后训练一个多类别模型。未确认、仅预测、草稿及需重标图像不会进入训练。详情见 [目标检测流程](docs/ACTIVE_LEARNING_DETECTION.md)。
+
+顶部右侧常显实时 GPU 利用率、温度和显存占用，每两秒通过 `nvidia-smi` 采样。悬停可查看显卡型号、功耗及全部 GPU 信息；显示的是包含其他程序在内的整卡占用。超时、工具缺失或采样失败显示不可用并自动重试，不显示为 0%，也不替代 HALCON 授权/兼容性检查。窗口关闭后停止采样并清理查询进程。
+
+GPU 采样、未知值、超时/取消与轮询生命周期回归：`dotnet run --project tests/HalconTraining.GpuTelemetry.Smoke/HalconTraining.GpuTelemetry.Smoke.csproj -c Release -p:NuGetAudit=false`。显式原生界面验证入口为 `--validate-gpu-status --validation-output <证据目录>`，请使用独立的 `HALCON_TRAINING_HOME`。
+
+HALCON 目标检测现支持兼容模型继续微调、手选中断检查点、继承配套预处理、逐批吞吐量与阶段耗时、每轮原子检查点。Epoch 为本轮追加轮数，不是精确恢复优化器状态。兼容性、界面、数据回归和两轮真实 GPU 续训已通过；等精度耗时对比与独立 mAP 仍待验证。实测数据准备仅占约 1.4%，层融合无明显收益，因此未默认开启缓存或融合。详见 [训练性能与模型复用](docs/TRAINING_PERFORMANCE.md)。

@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using HalconTraining.App.ViewModels;
 
 namespace HalconTraining.App;
@@ -11,6 +12,31 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = viewModel;
+        PreviewKeyDown+=(_,args)=>
+        {
+            if(Keyboard.Modifiers==ModifierKeys.Control && args.Key is Key.D1 or Key.D2 or Key.D3)
+            {
+                viewModel.SelectedPageIndex=(int)args.Key-(int)Key.D1;args.Handled=true;return;
+            }
+            if(viewModel.HasActiveOperations)return;
+            if(Keyboard.Modifiers==(ModifierKeys.Control|ModifierKeys.Shift)&&args.Key==Key.O)
+            {
+                viewModel.SelectedPageIndex=DesktopWorkspaceViewModel.DatasetPage;DatasetPages.SelectedIndex=1;
+                viewModel.ActiveLearning.ImportFolderCommand.Execute(null);args.Handled=true;
+            }
+            else if(Keyboard.Modifiers==ModifierKeys.Control&&args.Key==Key.O)
+            {
+                viewModel.SelectedPageIndex=DesktopWorkspaceViewModel.DatasetPage;DatasetPages.SelectedIndex=0;
+                viewModel.BrowseDatasetCommand.Execute(null);args.Handled=true;
+            }
+            else if(Keyboard.Modifiers==ModifierKeys.Control&&args.Key==Key.S)
+            {
+                if(DatasetPages.SelectedIndex==1&&viewModel.SelectedPageIndex==DesktopWorkspaceViewModel.DatasetPage)
+                {if(viewModel.ActiveLearning.CanReview)viewModel.ActiveLearning.SaveDraftCommand.Execute(null);}
+                else if(!viewModel.HasInputErrors&&viewModel.HasDataset)viewModel.SaveParametersCommand.Execute(null);
+                args.Handled=true;
+            }
+        };
         DatasetPages.SelectionChanged+=(_,args)=>
         {
             if(ReferenceEquals(args.Source,DatasetPages))viewModel.DetectionSelected=DatasetPages.SelectedIndex==1;

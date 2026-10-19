@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
+using HalconTraining.Persistence.Environment;
 
 namespace HalconTraining.App;
 
@@ -19,6 +20,7 @@ public partial class App : System.Windows.Application
     [DllImport("user32.dll")] private static extern bool ShowWindowAsync(IntPtr handle,int command);
     protected override void OnStartup(StartupEventArgs e)
     {
+        HalconTraining.App.Views.ActionVisual.InitializeToolTips();
         base.OnStartup(e);
         var root=FindWorkspace();
         var identity=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Path.GetFullPath(root).ToUpperInvariant())))[..16];
@@ -39,12 +41,35 @@ public partial class App : System.Windows.Application
             if(!e.Args.Contains("--validate-desktop"))MessageBox.Show("程序遇到错误，详情已保存到logs/desktop-error.log。","HALCON训练平台",MessageBoxButton.OK,MessageBoxImage.Error);
             Shutdown(1);
         };
-        var viewModel=new DesktopWorkspaceViewModel(new TrainingWorkspace(new HalconProcessRunner(),new FileWorkspaceStore(root)),new WorkspaceDialogs(),new NamedPipeTrainingWorkerClient());
+        var viewModel=new DesktopWorkspaceViewModel(new TrainingWorkspace(new HalconProcessRunner(),new FileWorkspaceStore(root)),new WorkspaceDialogs(),new NamedPipeTrainingWorkerClient(),new NvidiaGpuTelemetry());
         var window = new MainWindow(viewModel);
         MainWindow = window;
         window.Loaded+=async(_,_)=>
         {
             await viewModel.InitializeAsync();
+            if(e.Args.Contains("--validate-ui-policy"))
+            {
+                var outputIndex=Array.IndexOf(e.Args,"--validation-output");
+                if(outputIndex<0||outputIndex+1>=e.Args.Length)throw new ArgumentException("缺少验证输出目录。");
+                Shutdown(await UiPolicyValidation.RunAsync(window,viewModel,e.Args[outputIndex+1],e.Args.Contains("--manual-ui-check")));
+                return;
+            }
+            if(e.Args.Contains("--validate-detection-optimization"))
+            {
+                var outputIndex=Array.IndexOf(e.Args,"--validation-output");
+                if(outputIndex<0||outputIndex+1>=e.Args.Length)throw new ArgumentException("缺少验证输出目录。");
+                viewModel.SelectedPageIndex=DesktopWorkspaceViewModel.DatasetPage;
+                window.DatasetPages.SelectedIndex=1;
+                Shutdown(await DetectionFolderValidation.RunOptimizationSettingsAsync(window,viewModel.ActiveLearning,e.Args[outputIndex+1]));
+                return;
+            }
+            if(e.Args.Contains("--validate-gpu-status"))
+            {
+                var outputIndex=Array.IndexOf(e.Args,"--validation-output");
+                if(outputIndex<0||outputIndex+1>=e.Args.Length)throw new ArgumentException("缺少验证输出目录。");
+                Shutdown(await GpuStatusValidation.RunAsync(window,viewModel,e.Args[outputIndex+1]));
+                return;
+            }
             if (e.Args.Contains("--validate-hdict-export"))
             {
                 var outputIndex=Array.IndexOf(e.Args,"--validation-output");

@@ -32,7 +32,8 @@ if (detectionSeed is not null)
             int.Parse(GetOption(args, "--width") ?? "512"),
             int.Parse(GetOption(args, "--height") ?? "512"),
             double.Parse(GetOption(args, "--rate") ?? "0.0001", System.Globalization.CultureInfo.InvariantCulture),
-            item => { Console.WriteLine(JsonSerializer.Serialize(item)); Console.Out.Flush(); });
+            item => { Console.WriteLine(JsonSerializer.Serialize(item)); Console.Out.Flush(); },
+            GetOption(args,"--initial-model"));
         Console.WriteLine(JsonSerializer.Serialize(outcome));
         return 0;
     }

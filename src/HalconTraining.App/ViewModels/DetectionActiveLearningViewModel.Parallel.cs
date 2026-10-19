@@ -30,8 +30,8 @@ public sealed partial class DetectionActiveLearningViewModel
             throw new InvalidOperationException("所选类别需各自确认至少 5 张且 Batch 不超过确认数量。");
         var epochs = BootstrapEpochs; var batch = BootstrapBatch; var size = BootstrapSize; var rate = BootstrapRate;
         var yolo = TrainingEngine == "YOLO · 预训练";
+        var usePreviousModel = ContinuePreviousHalconModel;
         var backbone = Path.Combine(_workspaceRoot, "assets", "pretrained", "pretrained_dl_classifier_compact.hdl");
-        if (!yolo && !File.Exists(backbone)) throw new FileNotFoundException("缺少 HALCON 检测骨干模型。", backbone);
         // A private snapshot per category prevents later UI selection or task completion from changing inputs.
         var source = JsonSerializer.Deserialize<DetectionReviewSession>(JsonSerializer.Serialize(_session))!;
         ParallelJobs.Clear();
@@ -59,6 +59,9 @@ public sealed partial class DetectionActiveLearningViewModel
                         : await ExportHalconSnapshotAsync(scope,token);
                     token.ThrowIfCancellationRequested();
                     var baseModel = yolo ? CompatibleParallelModel(scope) : backbone;
+                    var sourceModel = yolo ? null : HalconDetectionModelSource.Resolve(scope,size,usePreviousModel);
+                    if (!yolo && sourceModel!.InitialModelFile is null && !File.Exists(backbone))
+                        throw new FileNotFoundException("缺少 HALCON 检测骨干模型。",backbone);
                     IReadOnlyList<string> arguments = yolo
                         ? ["train", "--coco", datasetFile, "--output", job.OutputDirectory,
                             "--model", baseModel, "--epochs", epochs.ToString(CultureInfo.InvariantCulture), "--batch", batch.ToString(CultureInfo.InvariantCulture),
@@ -66,7 +69,9 @@ public sealed partial class DetectionActiveLearningViewModel
                         : ["--detection-train", datasetFile, "--backbone-file", baseModel,
                             "--output-dir", job.OutputDirectory, "--epochs", epochs.ToString(CultureInfo.InvariantCulture), "--batch", batch.ToString(CultureInfo.InvariantCulture),
                             "--width", size.ToString(CultureInfo.InvariantCulture), "--height", size.ToString(CultureInfo.InvariantCulture), "--rate", rate.ToString(CultureInfo.InvariantCulture)];
+                    if(sourceModel?.InitialModelFile is { } initialModel) arguments = [..arguments,"--initial-model",initialModel];
                     job.State = "训练中";
+                    job.Detail = sourceModel?.Description ?? "独立类别 YOLO 预标注训练";
                     var progress = new Progress<string>(line =>
                     {
                         job.Receive(line);
@@ -74,7 +79,7 @@ public sealed partial class DetectionActiveLearningViewModel
                         OperationLog = string.Join(Environment.NewLine, _operationLines);
                     });
                     var result = await (yolo ? _yoloRunner : _runner).RunAsync(arguments, progress, token);
-                    await File.WriteAllTextAsync(Path.Combine(job.OutputDirectory,"training.log"), result.Output + Environment.NewLine + result.Error);
+                    await File.WriteAllTextAsync(Path.Combine(job.OutputDirectory,"worker.log"), result.Output + Environment.NewLine + result.Error);
                     if (result.ExitCode != 0) throw new InvalidOperationException(result.Error);
                     token.ThrowIfCancellationRequested();
                     var model = Path.Combine(job.OutputDirectory, yolo ? "model.pt" : "model.hdl");

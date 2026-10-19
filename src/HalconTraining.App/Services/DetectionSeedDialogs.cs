@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media.Imaging;
 using Microsoft.Win32;
+using HalconTraining.App.Views;
 
 namespace HalconTraining.App.Services;
 
@@ -44,9 +45,18 @@ public static class DetectionSeedDialogs
 
     public static string[]? EnterClasses()
     {
+        var (window,input)=CreateClassDialog();
+        if (window.ShowDialog() != true) return null;
+        var classes = input.Text.Split(new[] { ',', '，' }, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (classes.Length == 0) throw new InvalidDataException("至少需要一个类别。");
+        return classes;
+    }
+
+    internal static (Window Window,TextBox Input) CreateClassDialog()
+    {
         var window = new Window
         {
-            Title = "初始检测类别", Width = 420, Height = 220, ResizeMode = ResizeMode.NoResize,
+            Title = "初始检测类别", Width = 420, SizeToContent = SizeToContent.Height, MinWidth=360,ResizeMode=ResizeMode.NoResize,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Owner = System.Windows.Application.Current.MainWindow
         };
@@ -57,6 +67,8 @@ public static class DetectionSeedDialogs
             TextWrapping = TextWrapping.Wrap
         });
         var input = new TextBox { Text = "缺陷", Margin = new Thickness(0, 12, 0, 8), FontSize = 14, Padding = new Thickness(8) };
+        System.Windows.Automation.AutomationProperties.SetName(input,"检测类别（逗号分隔）");
+        input.SetBinding(FrameworkElement.ToolTipProperty,new System.Windows.Data.Binding("Text"){Source=input});
         content.Children.Add(input);
         content.Children.Add(new TextBlock
         {
@@ -68,18 +80,17 @@ public static class DetectionSeedDialogs
             Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right,
             Margin = new Thickness(0, 16, 0, 0)
         };
-        var cancel = new Button { Content = "取消", MinWidth = 70, Margin = new Thickness(0, 0, 8, 0) };
+        var cancel = new Button { Content = "取消", IsCancel=true, Margin = new Thickness(0, 0, 8, 0) };
+        ActionVisual.SetKind(cancel,"Cancel");
         cancel.Click += (_, _) => window.DialogResult = false;
-        var confirm = new Button { Content = "创建标注", MinWidth = 96, IsDefault = true };
+        var confirm = new Button { Content = "创建标注", IsDefault = true };
+        ActionVisual.SetKind(confirm,"Check");
         confirm.Click += (_, _) => window.DialogResult = true;
         buttons.Children.Add(cancel);
         buttons.Children.Add(confirm);
         content.Children.Add(buttons);
         window.Content = content;
-        if (window.ShowDialog() != true) return null;
-        var classes = input.Text.Split(new[] { ',', '，' }, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        if (classes.Length == 0) throw new InvalidDataException("至少需要一个类别。");
-        return classes;
+        return (window,input);
     }
 
     public static string? SelectDetector()

@@ -13,6 +13,45 @@ namespace HalconTraining.App.Services;
 /// <summary>Explicit desktop check. Reads originals; never approves or trains on generated labels.</summary>
 internal static class DetectionFolderValidation
 {
+    public static async Task<int> RunOptimizationSettingsAsync(MainWindow window,DetectionActiveLearningViewModel vm,string output)
+    {
+        Directory.CreateDirectory(output);
+        try
+        {
+            var view=(DetectionActiveLearningView)((TabItem)window.DatasetPages.Items[1]).Content;
+            await window.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);
+            if(!vm.ContinuePreviousHalconModel || !vm.HalconModelSourceDescription.Contains("上次完成"))
+                throw new InvalidOperationException("完成模型未被自动匹配："+vm.HalconModelSourceDescription);
+            view.ContinueHalconTraining.SetCurrentValue(System.Windows.Controls.Primitives.ToggleButton.IsCheckedProperty,false);
+            if(vm.ContinuePreviousHalconModel || !vm.HalconModelSourceDescription.Contains("重新训练"))
+                throw new InvalidOperationException("不能从界面选择重新训练。");
+            vm.ClearInitialModelCommand.Execute(null);
+            if(!vm.ContinuePreviousHalconModel)throw new InvalidOperationException("恢复自动匹配未重新启用模型复用。");
+            var size=vm.BootstrapSize;
+            view.DetectionSizeInput.SetCurrentValue(TextBox.TextProperty,"512");
+            if(!vm.HalconModelSourceDescription.Contains("尺寸不同"))throw new InvalidOperationException("修改尺寸未刷新模型匹配提示。");
+            view.DetectionSizeInput.SetCurrentValue(TextBox.TextProperty,size.ToString());
+            if(!vm.HalconModelSourceDescription.Contains("上次完成"))throw new InvalidOperationException("恢复尺寸后未重新匹配。");
+            Capture(window,Path.Combine(output,"optimization-settings.png"));
+            window.Width=1120;window.Height=780;
+            await Task.Delay(300);window.UpdateLayout();
+            await window.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);
+            if(!view.DetectionRateInput.IsVisible || !view.CombinedTrainingButton.IsVisible || !view.ContinueHalconTraining.IsVisible || view.DetectionImage.ActualHeight<180)
+                throw new InvalidOperationException($"最小窗口核心操作不可见；图像高度 {view.DetectionImage.ActualHeight:F0}。");
+            Capture(window,Path.Combine(output,"optimization-settings-minimum.png"));
+            await File.WriteAllTextAsync(Path.Combine(output,"validation.json"),JsonSerializer.Serialize(new{
+                passed=true,gpuTrainingExecuted=false,vm.HalconModelSourceDescription,view.DetectionImage.ActualHeight,
+                checks=new[]{"自动匹配完成模型","勾选控制重新训练/微调","图像尺寸修改即时刷新匹配","最小窗口核心参数与原图可见"}
+            },new JsonSerializerOptions{WriteIndented=true}));
+            return 0;
+        }
+        catch(Exception error)
+        {
+            await File.WriteAllTextAsync(Path.Combine(output,"validation.json"),JsonSerializer.Serialize(new{passed=false,error=error.ToString()}));
+            Capture(window,Path.Combine(output,"failed.png"));return 1;
+        }
+    }
+
     public static async Task<int> RunHdictExportAsync(MainWindow window,DetectionActiveLearningViewModel vm,string output)
     {
         Directory.CreateDirectory(output);
