@@ -129,6 +129,13 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
         });
         ReworkCommand = new AsyncCommand(_ => ExecuteAsync(() => SaveReviewAsync("rework")));
         SaveDraftCommand = new AsyncCommand(_ => ExecuteAsync(() => SaveReviewAsync("pending")));
+        RemoveImageCommand = new AsyncCommand(async _ =>
+        {
+            if (!CanReview || _trainingBusy()) return;
+            var path=SelectedRow!.Image.ImagePath;
+            if (DetectionSeedDialogs.CreateRemoveImageDialog(path).ShowDialog()==true)
+                await RemoveImageFromDatasetAsync(path);
+        });
         ExportCommand = new AsyncCommand(_ => ExecuteAsync(ExportAsync));
         ExportHalconCommand = new AsyncCommand(_ => ExportHalconDatasetAsync());
         ExportAllHalconCommand = new AsyncCommand(_ => ExportHalconDatasetAsync(true));
@@ -190,6 +197,7 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
     public RelayCommand OpenThumbnailCommand { get; }
     public AsyncCommand ReworkCommand { get; }
     public AsyncCommand SaveDraftCommand { get; }
+    public AsyncCommand RemoveImageCommand { get; }
     public AsyncCommand ExportCommand { get; }
     public RelayCommand AddBoxCommand { get; }
     public RelayCommand DrawBoxCommand { get; }
@@ -588,7 +596,7 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
         if (images.Count == 0) return;
         var added = await _store.AppendSeedImagesAsync(_session, images);
         RefreshQueue();
-        Status = $"新增 {added} 张原图；重复图片已跳过，之前的审核与标注不会被清除。";
+        Status = $"新增 {added} 张原图；重复或已从数据集移除的图片已跳过，之前的审核与标注不会被清除。";
     }
 
     private string ResolveYoloBaseModel()
@@ -877,6 +885,18 @@ public sealed partial class DetectionActiveLearningViewModel : ObservableModel
         }
         finally { _refreshingQueue = false; }
     }
+
+    internal Task RemoveImageFromDatasetAsync(string imagePath) => ExecuteAsync(async () =>
+    {
+        if (_session is null) throw new InvalidOperationException("请先选择数据集。");
+        var index=Items.ToList().FindIndex(row=>row.Image.ImagePath.Equals(imagePath,StringComparison.OrdinalIgnoreCase));
+        var nextPath=Items.Skip(index+1).FirstOrDefault()?.Image.ImagePath ?? Items.Take(Math.Max(0,index)).LastOrDefault()?.Image.ImagePath;
+        var next=await _store.RemoveImageAsync(_session,imagePath);
+        _session=next;
+        LastExport="";
+        RefreshQueue(nextPath);
+        Status=$"已从数据集移除 {Path.GetFileName(imagePath)} 及其标注，原图保留。当前类别剩余 {DatasetImageCount:N0} 张；后续训练和导出使用更新后的数据。";
+    });
 
     private void UpdatePreview()
     {

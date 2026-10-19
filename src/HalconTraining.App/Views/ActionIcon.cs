@@ -17,6 +17,7 @@ public sealed class ActionIcon : FrameworkElement
         ["ImportFolder"] = "M3,10 V5 H10 L13,8 H21 V20 H3 V16 M1,13 H13 M9,9 L13,13 9,17",
         ["New"] = "M14,2 H5 V22 H19 V7 Z M14,2 V7 H19 M8,14 H16 M12,10 V18",
         ["AddImages"] = "M18,13 V20 H2 V4 H17 M4,17 L8,12 11,15 14,11 18,15 M17,6 H23 M20,3 V9",
+        ["RemoveImage"] = "M18,13 V20 H2 V4 H17 M4,17 L8,12 11,15 14,11 18,15 M17,6 H23",
         ["Export"] = "M3,13 V21 H21 V13 M12,17 V2 M7,7 L12,2 17,7",
         ["ExportClass"] = "M2,14 V21 H18 V14 M10,17 V3 M5,8 L10,3 15,8 M19,4 H22 V10 H19",
         ["ExportCoco"] = "M3,13 V21 H21 V13 M12,17 V2 M7,7 L12,2 17,7 M3,5 V9 H6 M18,9 H21 V5",

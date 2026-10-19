@@ -409,7 +409,44 @@ try
     await activeTwo.Task.WaitAsync(TimeSpan.FromSeconds(5)); cancelBatch.Cancel();
     var cancelledJobs = await cancelRun;
     Require(cancelStarted == 2 && cancelledJobs.All(item => item.Cancelled), "Stop cancels running jobs and queued jobs never start");
-    Console.WriteLine("PASS: detection review/folder isolation/gestures/UTF8/progress/bulk approval/bounded concurrency/failure isolation/cancellation");
+    var removalRoot=Path.Combine(root,"removal-source");
+    var removalWorkspace=Path.Combine(root,"removal-workspace");
+    Directory.CreateDirectory(Path.Combine(removalRoot,"A"));Directory.CreateDirectory(Path.Combine(removalRoot,"B"));
+    var removedFile=Path.Combine(removalRoot,"A","remove.png");
+    var keptFile=Path.Combine(removalRoot,"A","keep.png");
+    var otherFile=Path.Combine(removalRoot,"B","other.png");
+    foreach(var path in new[]{removedFile,keptFile,otherFile})await File.WriteAllBytesAsync(path,[1,2,3,4]);
+    var removalStore=new DetectionActiveLearningStore(removalWorkspace);
+    var removalSession=await removalStore.ImportFolderAsync(removalRoot,_=>(100,80));
+    foreach(var image in removalSession.Images){image.Status="approved";image.HasDraft=true;image.ReviewedBoxes=[new(image.FolderClassId!.Value,1,1,1,20,20)];}
+    await removalStore.SaveAsync(removalSession);
+    var afterRemoval=await removalStore.RemoveImageAsync(removalSession,removedFile.ToUpperInvariant());
+    Require(removalSession.Images.Count==3&&afterRemoval.Images.Count==2,"Removal publishes only the saved copy");
+    Require(afterRemoval.Classes.SequenceEqual(removalSession.Classes)&&afterRemoval.Images.Single(i=>i.ImagePath==otherFile).Status=="approved","Removal preserves class IDs and other folder annotations");
+    Require(afterRemoval.RemovedImagePaths.Count==1&&Directory.GetFiles(Path.Combine(removalWorkspace,"active-learning","sessions","backups")).Length==1,"Removal records membership exclusion and review backup");
+    var reloadedRemoval=(await removalStore.LoadLatestAsync())!;
+    Require(reloadedRemoval.Images.Count==2&&reloadedRemoval.RemovedImagePaths.Count==1,"Removal survives session reload");
+    var removalExport=await removalStore.ExportApprovedCocoAsync(reloadedRemoval);
+    using(var exportedRemoval=JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(removalExport,"annotations.json"))))
+        Require(exportedRemoval.RootElement.GetProperty("images").GetArrayLength()==2,"Removed image excluded from subsequent export");
+    Require(DetectionActiveLearningStore.CombinedApprovedScope(reloadedRemoval).Images.All(i=>i.ImagePath!=removedFile),"Removed approved image excluded from combined training snapshot");
+    var removalRescan=await removalStore.ImportFolderAsync(removalRoot,path=>path==removedFile?throw new Exception("Excluded file must not be read"):(100,80),reloadedRemoval);
+    Require(removalRescan.Images.Count==2,"Folder rescan cannot silently re-add removed original");
+    Require(await removalStore.AppendSeedImagesAsync(removalRescan,[(removedFile,100,80)])==0,"Adding existing source files respects explicit removal");
+    var removedProposal=new DetectionReviewSession {Classes=removalRescan.Classes,Images=[new(){ImagePath=removedFile,Width=100,Height=80,FolderClassId=removalRescan.Classes[0].Id}]};
+    Require(DetectionActiveLearningStore.MergePredictions(removalRescan,removedProposal).Images.Count==2,"Prediction merge cannot resurrect removed images");
+    removedProposal.Classes=[removalRescan.Classes[0]];
+    Require(DetectionActiveLearningStore.MergeFolderPredictions(removalRescan,removalRescan.Classes[0].Id,removedProposal).Images.Count==2,"Per-folder predictions preserve removal");
+    var failingRoot=Path.Combine(root,"blocked-removal-store");await File.WriteAllTextAsync(failingRoot,"not a directory");
+    var writeRejected=false;
+    try { await new DetectionActiveLearningStore(failingRoot).RemoveImageAsync(removalRescan,keptFile); }
+    catch(IOException) {writeRejected=true;}
+    Require(writeRejected&&removalRescan.Images.Count==2,"Failed persistence does not mutate current membership");
+    foreach(var path in new[]{keptFile,otherFile})removalRescan=await removalStore.RemoveImageAsync(removalRescan,path);
+    var emptyRemoval=await removalStore.ImportFolderAsync(removalRoot,_=>(100,80),(await removalStore.LoadLatestAsync())!);
+    Require(emptyRemoval.Images.Count==0&&emptyRemoval.RemovedImagePaths.Count==3,"Removing the last image persists an empty dataset without resurrection");
+    foreach(var path in new[]{removedFile,keptFile,otherFile})Require((await File.ReadAllBytesAsync(path)).SequenceEqual(new byte[]{1,2,3,4}),"Removal never changes source file bytes");
+    Console.WriteLine("PASS: detection review/folder isolation/gestures/UTF8/progress/bulk approval/bounded concurrency/failure isolation/cancellation/image removal and persistence");
 }
 finally
 {

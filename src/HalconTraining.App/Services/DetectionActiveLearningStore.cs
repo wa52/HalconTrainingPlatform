@@ -67,6 +67,7 @@ public sealed class DetectionReviewSession
     public DateTimeOffset UpdatedAt { get; set; }
     public List<DetectionCategory> Classes { get; set; } = [];
     public List<DetectionReviewImage> Images { get; set; } = [];
+    public List<string> RemovedImagePaths { get; set; } = [];
 }
 
 /// <summary>
@@ -78,6 +79,25 @@ public sealed partial class DetectionActiveLearningStore(string workspaceRoot)
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { WriteIndented = true };
     private readonly string _sessions = Path.Combine(workspaceRoot, "active-learning", "sessions");
     private readonly string _exports = Path.Combine(workspaceRoot, "active-learning", "exports");
+
+    /// <summary>Remove membership and annotations atomically; original files and existing models are untouched.</summary>
+    public async Task<DetectionReviewSession> RemoveImageAsync(DetectionReviewSession session, string imagePath)
+    {
+        var full = Path.GetFullPath(imagePath);
+        if (!session.Images.Any(image => Path.GetFullPath(image.ImagePath).Equals(full, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("所选图像已不在当前数据集中。");
+        if (string.IsNullOrWhiteSpace(session.Id) || session.Id.IndexOfAny(['/', '\\', ':']) >= 0)
+            throw new InvalidDataException("无效的审核会话ID。");
+        var next = JsonSerializer.Deserialize<DetectionReviewSession>(JsonSerializer.Serialize(session, Json), Json)!;
+        next.Images.RemoveAll(image => Path.GetFullPath(image.ImagePath).Equals(full, StringComparison.OrdinalIgnoreCase));
+        if (!next.RemovedImagePaths.Contains(full, StringComparer.OrdinalIgnoreCase)) next.RemovedImagePaths.Add(full);
+        var backupDirectory = Path.Combine(_sessions, "backups");
+        Directory.CreateDirectory(backupDirectory);
+        await File.WriteAllTextAsync(Path.Combine(backupDirectory, session.Id + ".before-remove-" + Guid.NewGuid().ToString("N") + ".json"),
+            JsonSerializer.Serialize(session, Json));
+        await SaveAsync(next);
+        return next;
+    }
 
     /// <summary>Limit model candidates only; manual decisions are never reduced by inference settings.</summary>
     public static IReadOnlyList<DetectionBox> ReviewBoxes(DetectionReviewImage image, int maxPredictions)
@@ -234,9 +254,11 @@ public sealed partial class DetectionActiveLearningStore(string workspaceRoot)
         var existing = session.Images.Select(i => Path.GetFullPath(i.ImagePath))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var additions = new List<DetectionReviewImage>();
+        var removed = session.RemovedImagePaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var item in images)
         {
             var full = Path.GetFullPath(item.Path);
+            if (removed.Contains(full)) continue;
             if (!File.Exists(full)) throw new FileNotFoundException("原始图片不存在。", full);
             if (item.Width <= 0 || item.Height <= 0)
                 throw new InvalidDataException("原图尺寸无效：" + full);

@@ -99,4 +99,25 @@ public static class DetectionSeedDialogs
             Filter = "目标检测模型|*.pt;*.hdl|YOLO 模型|*.pt|HALCON 模型|*.hdl", CheckFileExists = true };
         return dialog.ShowDialog() == true ? dialog.FileName : null;
     }
+
+    internal static Window CreateRemoveImageDialog(string imagePath)
+    {
+        var window = new Window { Title="从数据集移除图像", Width=500, MinWidth=360,
+            SizeToContent=SizeToContent.Height, ResizeMode=ResizeMode.NoResize,
+            Owner=System.Windows.Application.Current.MainWindow, WindowStartupLocation=WindowStartupLocation.CenterOwner };
+        var content=new StackPanel {Margin=new Thickness(24)};
+        content.Children.Add(new TextBlock {Text="移除所选图像？",FontSize=20,FontWeight=FontWeights.SemiBold});
+        content.Children.Add(new TextBox {Text=imagePath,IsReadOnly=true,TextWrapping=TextWrapping.Wrap,
+            MaxHeight=120,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,Margin=new Thickness(0,16,0,12)});
+        content.Children.Add(new TextBlock {Text="原图保留在磁盘。该图像及其标注将从当前数据集移除，不再参与后续训练、预测和导出；已生成的模型和历史导出保持不变。",
+            TextWrapping=TextWrapping.Wrap});
+        var buttons=new StackPanel {Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(0,20,0,0)};
+        var cancel=new Button {Content="取消",IsCancel=true,IsDefault=true,Margin=new Thickness(0,0,8,0)};
+        ActionVisual.SetKind(cancel,"Cancel");cancel.Click+=(_,_)=>window.DialogResult=false;
+        var remove=new Button {Content="从数据集移除（保留原图）"};ActionVisual.SetKind(remove,"RemoveImage");
+        remove.Click+=(_,_)=>window.DialogResult=true;
+        buttons.Children.Add(cancel);buttons.Children.Add(remove);content.Children.Add(buttons);window.Content=content;
+        window.Loaded+=(_,_)=>cancel.Focus();
+        return window;
+    }
 }

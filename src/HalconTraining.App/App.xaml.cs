@@ -49,6 +49,13 @@ public partial class App : System.Windows.Application
             await viewModel.InitializeAsync();
             // Explicit isolated visual-review mode only; normal windows never become topmost.
             if(e.Args.Contains("--review-ui"))window.Topmost=true;
+            if(e.Args.Contains("--validate-image-removal"))
+            {
+                var outputIndex=Array.IndexOf(e.Args,"--validation-output");
+                if(outputIndex<0||outputIndex+1>=e.Args.Length)throw new ArgumentException("缺少验证输出目录。");
+                Shutdown(await ImageRemovalValidation.RunAsync(window,viewModel,e.Args[outputIndex+1],e.Args.Contains("--manual-image-removal-check")));
+                return;
+            }
             if(e.Args.Contains("--validate-ui-policy"))
             {
                 var outputIndex=Array.IndexOf(e.Args,"--validation-output");

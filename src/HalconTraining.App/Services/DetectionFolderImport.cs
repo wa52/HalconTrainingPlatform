@@ -37,6 +37,7 @@ public sealed partial class DetectionActiveLearningStore
         session.DatasetName = Path.GetFileName(root);
         session.ImportIssues.Clear();
         var existing = session.Images.ToDictionary(image => Path.GetFullPath(image.ImagePath), StringComparer.OrdinalIgnoreCase);
+        var removed = session.RemovedImagePaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var nextId = session.Classes.Select(category => category.Id).DefaultIfEmpty(0).Max() + 1;
         var recursive = new EnumerationOptions
         {
@@ -65,6 +66,7 @@ public sealed partial class DetectionActiveLearningStore
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var full = Path.GetFullPath(file);
+                if (removed.Contains(full)) continue;
                 try
                 {
                     var (width, height) = readSize(full);
@@ -93,7 +95,7 @@ public sealed partial class DetectionActiveLearningStore
             if (readable == 0) session.ImportIssues.Add("类别没有可读取的图片：" + name);
             progress?.Report($"正在读取 {name} · 已发现 {session.Images.Count:N0} 张图片");
         }
-        if (session.Images.Count == 0) throw new InvalidDataException("类别子文件夹中没有可读取的图像。");
+        if (session.Images.Count == 0 && !(sameRoot && removed.Count > 0)) throw new InvalidDataException("类别子文件夹中没有可读取的图像。");
         if (Directory.EnumerateFiles(root, "*", options).Any(path => ImageExtensions.Contains(Path.GetExtension(path))))
             session.ImportIssues.Add("根目录中的图片没有类别，已跳过；请放入对应的类别子文件夹。");
         cancellationToken.ThrowIfCancellationRequested();
@@ -132,7 +134,8 @@ public sealed partial class DetectionActiveLearningStore
             SourceDirectory = session.SourceDirectory is null ? null : Path.Combine(session.SourceDirectory, category.Name),
             ModelId = session.ModelId, CreatedAt = session.CreatedAt, UpdatedAt = session.UpdatedAt,
             LastTrainedModelPath = session.FolderModels.GetValueOrDefault(classId),
-            Classes = [category], Images = session.Images.Where(image => image.FolderClassId == classId).ToList()
+            Classes = [category], Images = session.Images.Where(image => image.FolderClassId == classId).ToList(),
+            RemovedImagePaths = session.RemovedImagePaths.ToList()
         };
     }
 
@@ -140,7 +143,8 @@ public sealed partial class DetectionActiveLearningStore
     {
         var scope = FolderScope(session, classId);
         var known = scope.Images.Select(image => image.ImagePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        if (predictions.Images.Any(image => !known.Contains(image.ImagePath)))
+        var removed = session.RemovedImagePaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (predictions.Images.Any(image => !known.Contains(image.ImagePath) && !removed.Contains(Path.GetFullPath(image.ImagePath))))
             throw new InvalidDataException("预测包含当前类别文件夹以外的图片，未覆盖标注。");
         var predictedScope = MergePredictions(scope, predictions);
         var merged = JsonSerializer.Deserialize<DetectionReviewSession>(JsonSerializer.Serialize(session, Json), Json)!;
@@ -160,8 +164,10 @@ public sealed partial class DetectionActiveLearningStore
             throw new InvalidDataException("模型类别与当前文件夹类别不一致，未覆盖已有标注。请使用本轮训练模型。");
         var merged = JsonSerializer.Deserialize<DetectionReviewSession>(JsonSerializer.Serialize(previous, Json), Json)!;
         var existing = merged.Images.ToDictionary(image => image.ImagePath, StringComparer.OrdinalIgnoreCase);
+        var removed = merged.RemovedImagePaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var proposal in predictions.Images)
         {
+            if (removed.Contains(Path.GetFullPath(proposal.ImagePath))) continue;
             if (!existing.TryGetValue(proposal.ImagePath, out var image))
             { merged.Images.Add(proposal); continue; }
             if (image.Status != "pending" || image.HasDraft) continue;
